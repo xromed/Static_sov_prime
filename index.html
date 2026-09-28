@@ -114,6 +114,7 @@ dl.meta dd{margin:0;overflow-wrap:anywhere}
 .aiv{font:600 13px var(--f-head);letter-spacing:.03em;text-transform:uppercase;padding:4px 8px;border-radius:4px;background:var(--soft)}
 .aiv.same{background:var(--ok-soft);color:var(--ok)} .aiv.diff{background:var(--bad-soft);color:var(--bad)} .aiv.unsure{background:var(--warn-soft);color:var(--warn)}
 .aic{color:var(--muted);font-size:12.5px;font-variant-numeric:tabular-nums}
+.ainote{font-size:12.5px;padding:5px 8px;border-radius:4px;background:var(--warn-soft);color:var(--ink)}
 .aiflag{color:var(--bad);font-weight:600}
 .distance{font:600 15px var(--f-head);font-variant-numeric:tabular-nums}
 .maplink{font-size:13px;color:var(--accent)}
@@ -272,11 +273,13 @@ function aiBlock(ai){
   const li = a => (a || []).map(x => `<li>${esc(x)}</li>`).join("");
   return `<div class="ai">
     <div class="aihead"><span class="aiv ${AI_CLS[ai.verdict] || ""}">ИИ по фото: ${esc(ai.verdict)}</span>
+      ${ai.verdict === "та же" && ai.storona ? `<span class="aiv">${esc(ai.storona)}</span>` : ""}
       <span class="aic">уверенность ${Math.round((ai.confidence || 0) * 100)}%</span></div>
+    ${(ai.notes || []).map(n => `<div class="ainote">${esc(n)}</div>`).join("")}
     <p>${esc(ai.summary)}</p>
     <dl class="meta">
-      <dt>Опора (объезд)</dt><dd>${esc(ai.opora_a) || "—"}</dd>
-      <dt>Опора (база)</dt><dd>${esc(ai.opora_b) || "—"}</dd>
+      <dt>Конструкция (объезд)</dt><dd>${esc(ai.opora_a) || "—"}</dd>
+      <dt>Конструкция (база)</dt><dd>${esc(ai.opora_b) || "—"}</dd>
       <dt>Табличка (объезд)</dt><dd class="mono">${esc(ai.plate_a) || "не видно"}</dd>
       <dt>Табличка (база)</dt><dd class="mono">${esc(ai.plate_b) || "не видно"}</dd>
     </dl>
@@ -331,7 +334,7 @@ function renderCard(){
       <span class="q">${esc(it.city)} · ${pos + 1 > 0 ? (pos + 1) + " из " + v.length : "вне фильтра"}</span>
       <div class="nav"><button type="button" class="btn-s" data-go="-1">← Назад</button><button type="button" class="btn-s" data-go="1">Дальше →</button></div>
     </div>
-    <p class="explain">${esc(AUTO_TEXT[it.auto])} Координаты — место, где стоял фотограф, а не сам щит. Сравнивайте железо: опору, раму, подсветку, табличку оператора с телефоном; реклама могла смениться.</p>
+    <p class="explain">${esc(AUTO_TEXT[it.auto])} Координаты — место, где стоял фотограф, а не сам щит. Сравнивайте железо: опору, раму, блок под полем, подсветку, табличку оператора; реклама могла смениться. Двусторонний щит — один носитель: стороны А и Б.</p>
     <div class="compare">
       <div class="side"><h3>Объезд · ${esc(it.tour.id)}</h3>
         ${photoBlock("t:" + it.key, it.tour.imgs)}
