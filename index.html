@@ -48,7 +48,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 button:focus-visible,a:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .wrap{max-width:1320px;margin:0 auto}
 
-header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding-block:14px 12px;border-bottom:1px solid var(--line);display:grid;gap:10px}
+header.top{background:var(--bg);padding-block:14px 12px;border-bottom:1px solid var(--line);display:grid;gap:10px}
 .titlerow{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 16px}
 .titlerow h1{font-size:24px;font-weight:700;letter-spacing:.01em}
 .titlerow .sub{color:var(--muted);font-size:13px}
@@ -64,7 +64,7 @@ header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background
 .banner{font-size:13px;padding:8px 12px;border-radius:6px;background:var(--warn-soft);color:var(--ink);border:1px solid var(--line)}
 
 .layout{display:grid;grid-template-columns:280px minmax(0,1fr);gap:20px;margin-top:18px;align-items:start}
-nav.queue{position:sticky;top:calc(env(safe-area-inset-top,0px) + 150px);max-height:calc(100vh - 170px);overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px}
+nav.queue{position:sticky;top:calc(env(safe-area-inset-top,0px) + 12px);max-height:calc(100vh - 24px);overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px}
 .qitem{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;width:100%;text-align:left;border:0;border-bottom:1px solid var(--soft);background:none;padding:8px 12px;font-size:13px}
 .qitem:hover{background:var(--soft)}
 .qitem[aria-current="true"]{background:var(--accent-soft)}
@@ -88,10 +88,12 @@ main.card{background:var(--panel);border:1px solid var(--line);border-radius:10p
 .btn-s{border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:4px 10px;font-size:13px}
 .explain{font-size:13px;color:var(--muted);margin:0;max-width:75ch}
 
-.compare{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.compare{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}
+.toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px}
+.explain-short{font-size:13px;color:var(--muted);margin:0}
 .side{display:grid;gap:10px;align-content:start;min-width:0}
 .side h3{font-size:14px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600}
-.photo{position:relative;background:var(--soft);border-radius:6px;overflow:hidden;aspect-ratio:3/4;max-width:100%}
+.photo{position:relative;background:var(--soft);border-radius:6px;overflow:hidden;height:min(68vh,720px);max-width:100%}
 .photo img{width:100%;height:100%;object-fit:contain;display:block;cursor:zoom-in}
 .photo .none{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:20px;color:var(--muted);font-size:13px}
 .thumbs{display:flex;gap:6px;flex-wrap:wrap}
@@ -140,6 +142,7 @@ textarea{width:100%;min-height:54px;resize:vertical;border:1px solid var(--line)
 }
 @media (max-width:560px){
   .compare{grid-template-columns:1fr}
+  .photo{height:52vh}
   .cardhead .nav{margin-left:0}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -298,20 +301,16 @@ function renderCard(){
   const v = visible(), pos = v.findIndex(([, i]) => i === cur);
   const question = it.kind === "pair" ? "Это тот же самый щит?" : "Есть ли этот щит в базе?";
 
-  let right;
-  if (!cand){
-    right = `<div class="side"><h3>База августа</h3><div class="photo"><div class="none">В базе нет ни одной конструкции ближе 300 м</div></div></div>`;
-  } else {
-    const tabs = it.cands.length > 1 ? `<div class="tabs" role="group" aria-label="Кандидаты">${it.cands.map((c, j) =>
+  const tabs = it.cands.length > 1 ? `<div class="tabs" role="group" aria-label="Кандидаты базы">${it.cands.map((c, j) =>
       `<button type="button" data-cand="${j}" aria-pressed="${j === ci}">${c.ai ? (c.ai.verdict === "та же" ? "✓ " : c.ai.verdict === "разные" ? "✗ " : "? ") : ""}${esc(c.brand || c.type || c.id)} · ${c.dist} м</button>`).join("")}</div>` : "";
-    const maps = `https://www.google.com/maps/dir/${it.tour.lat},${it.tour.lon}/${cand.lat},${cand.lon}`;
-    right = `<div class="side"><h3>База августа · ${esc(cand.id)}</h3>${tabs}
-      ${aiBlock(cand.ai)}
-      ${photoBlock("b:" + it.key + ":" + ci, cand.imgs)}
-      <div><span class="distance">${cand.dist} м</span> между точками съёмки · <a class="maplink" href="${maps}" target="_blank" rel="noopener">обе точки на карте</a></div>
-      ${metaList(cand, true)}</div>`;
-  }
-
+  const maps = cand ? `https://www.google.com/maps/dir/${it.tour.lat},${it.tour.lon}/${cand.lat},${cand.lon}` : "";
+  const toolbar = cand ? `<div class="toolbar">${tabs}<span><span class="distance">${cand.dist} м</span> между точками съёмки · <a class="maplink" href="${maps}" target="_blank" rel="noopener">обе точки на карте</a></span></div>` : "";
+  const photos = `<div class="compare">
+      <div class="side"><h3>Объезд · ${esc(it.tour.id)}</h3>${photoBlock("t:" + it.key, it.tour.imgs)}</div>
+      <div class="side"><h3>База августа${cand ? " · " + esc(cand.id) : ""}</h3>${cand ? photoBlock("b:" + it.key + ":" + ci, cand.imgs)
+        : `<div class="photo"><div class="none">В базе нет конструкций ближе 300 м</div></div>`}</div>
+    </div>`;
+  const metas = `<div class="compare"><div>${metaList(it.tour, false)}</div><div>${cand ? metaList(cand, true) : ""}</div></div>`;
   let buttons;
   if (it.kind === "pair"){
     buttons = `
@@ -334,14 +333,11 @@ function renderCard(){
       <span class="q">${esc(it.city)} · ${pos + 1 > 0 ? (pos + 1) + " из " + v.length : "вне фильтра"}</span>
       <div class="nav"><button type="button" class="btn-s" data-go="-1">← Назад</button><button type="button" class="btn-s" data-go="1">Дальше →</button></div>
     </div>
-    <p class="explain">${esc(AUTO_TEXT[it.auto])} Координаты — место, где стоял фотограф, а не сам щит. Сравнивайте железо: опору, раму, блок под полем, подсветку, табличку оператора; реклама могла смениться. Двусторонний щит — один носитель: стороны А и Б.</p>
-    <div class="compare">
-      <div class="side"><h3>Объезд · ${esc(it.tour.id)}</h3>
-        ${photoBlock("t:" + it.key, it.tour.imgs)}
-        ${metaList(it.tour, false)}
-      </div>
-      ${right}
-    </div>
+    <p class="explain-short">${esc(AUTO_TEXT[it.auto])} Сравнивайте железо: опору, раму, блок под полем, табличку оператора, окружение. Двусторонний щит — один носитель со сторонами А и Б.</p>
+    ${toolbar}
+    ${photos}
+    ${metas}
+    ${cand ? aiBlock(cand.ai) : ""}
     <div class="answer">
       <strong>${question}</strong>
       <div class="row">${buttons}</div>
