@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+</head>
+<body>
+<title>Сверка щитов Навои</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#EEF0EE; --panel:#FFFFFF; --ink:#1B2226; --muted:#5B676D; --line:#D3D9D7; --soft:#E4E8E6;
+  --accent:#1D5AA6; --accent-ink:#FFFFFF; --accent-soft:#DCE7F5;
+  --ok:#2C7A4B; --ok-soft:#DDEFE3; --bad:#B03F2C; --bad-soft:#F6E0DA; --warn:#9A6A12; --warn-soft:#F5EAD2;
+  --new:#5A4FA0; --new-soft:#E6E3F4; --shade:rgba(10,14,16,.86);
+  --f-head:"IBM Plex Sans Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#121719; --panel:#1A2124; --ink:#E6EBEA; --muted:#98A5AA; --line:#2E393D; --soft:#232C30;
+    --accent:#6FA3E6; --accent-ink:#0E1A2A; --accent-soft:#1E3149;
+    --ok:#6CC08E; --ok-soft:#1C3527; --bad:#EE8B77; --bad-soft:#3C2320; --warn:#E0B458; --warn-soft:#3A2F17;
+    --new:#A99DF0; --new-soft:#2A2645;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#121719; --panel:#1A2124; --ink:#E6EBEA; --muted:#98A5AA; --line:#2E393D; --soft:#232C30;
+  --accent:#6FA3E6; --accent-ink:#0E1A2A; --accent-soft:#1E3149;
+  --ok:#6CC08E; --ok-soft:#1C3527; --bad:#EE8B77; --bad-soft:#3C2320; --warn:#E0B458; --warn-soft:#3A2F17;
+  --new:#A99DF0; --new-soft:#2A2645;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 var(--f-body);padding-inline:16px;padding-block:0 40px}
+h1,h2,h3{font-family:var(--f-head);text-wrap:balance;margin:0;line-height:1.15}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,a:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{max-width:1320px;margin:0 auto}
+
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding-block:14px 12px;border-bottom:1px solid var(--line);display:grid;gap:10px}
+.titlerow{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 16px}
+.titlerow h1{font-size:24px;font-weight:700;letter-spacing:.01em}
+.titlerow .sub{color:var(--muted);font-size:13px}
+.progress{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.bar{flex:1 1 220px;height:8px;border-radius:4px;background:var(--soft);overflow:hidden;display:flex;min-width:0}
+.bar i{display:block;height:100%}
+.legend{display:flex;flex-wrap:wrap;gap:4px 12px}
+.legend span::before{content:"";display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:0;background:var(--c)}
+.filters{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:3px 11px;font-size:13px;font-variant-numeric:tabular-nums}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.exportrow{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.banner{font-size:13px;padding:8px 12px;border-radius:6px;background:var(--warn-soft);color:var(--ink);border:1px solid var(--line)}
+
+.layout{display:grid;grid-template-columns:280px minmax(0,1fr);gap:20px;margin-top:18px;align-items:start}
+nav.queue{position:sticky;top:calc(env(safe-area-inset-top,0px) + 150px);max-height:calc(100vh - 170px);overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px}
+.qitem{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;width:100%;text-align:left;border:0;border-bottom:1px solid var(--soft);background:none;padding:8px 12px;font-size:13px}
+.qitem:hover{background:var(--soft)}
+.qitem[aria-current="true"]{background:var(--accent-soft)}
+.qitem .qid{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+.qitem .qb{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dot{width:10px;height:10px;border-radius:50%;border:1.5px solid var(--line);background:transparent}
+.dot.same{background:var(--ok);border-color:var(--ok)} .dot.diff{background:var(--bad);border-color:var(--bad)}
+.dot.unsure{background:var(--warn);border-color:var(--warn)} .dot.newc{background:var(--new);border-color:var(--new)}
+
+.pill{display:inline-block;font:600 12px/1 var(--f-head);letter-spacing:.04em;text-transform:uppercase;padding:5px 8px;border-radius:4px}
+.pill.проверить{background:var(--warn-soft);color:var(--warn)}
+.pill.смена{background:var(--bad-soft);color:var(--bad)}
+.pill.совпало{background:var(--ok-soft);color:var(--ok)}
+.pill.новое{background:var(--new-soft);color:var(--new)}
+
+main.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px;display:grid;gap:16px;min-width:0}
+.cardhead{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px}
+.cardhead h2{font-size:22px}
+.cardhead .q{color:var(--muted);font-size:14px}
+.cardhead .nav{margin-left:auto;display:flex;gap:6px}
+.btn-s{border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:4px 10px;font-size:13px}
+.explain{font-size:13px;color:var(--muted);margin:0;max-width:75ch}
+
+.compare{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.side{display:grid;gap:10px;align-content:start;min-width:0}
+.side h3{font-size:14px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600}
+.photo{position:relative;background:var(--soft);border-radius:6px;overflow:hidden;aspect-ratio:3/4;max-width:100%}
+.photo img{width:100%;height:100%;object-fit:contain;display:block;cursor:zoom-in}
+.photo .none{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:20px;color:var(--muted);font-size:13px}
+.thumbs{display:flex;gap:6px;flex-wrap:wrap}
+.thumbs button{border:2px solid transparent;padding:0;border-radius:4px;overflow:hidden;width:56px;height:56px;background:var(--soft)}
+.thumbs button[aria-pressed="true"]{border-color:var(--accent)}
+.thumbs img{width:100%;height:100%;object-fit:cover;display:block}
+dl.meta{display:grid;grid-template-columns:auto minmax(0,1fr);gap:3px 12px;margin:0;font-size:13.5px}
+dl.meta dt{color:var(--muted)}
+dl.meta dd{margin:0;overflow-wrap:anywhere}
+.mono{font-family:var(--f-mono);font-size:12.5px}
+.tabs{display:flex;flex-wrap:wrap;gap:6px}
+.tabs button{border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:4px 10px;font-size:13px;font-variant-numeric:tabular-nums}
+.tabs button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.distance{font:600 15px var(--f-head);font-variant-numeric:tabular-nums}
+.maplink{font-size:13px;color:var(--accent)}
+
+.answer{border-top:1px solid var(--line);padding-top:14px;display:grid;gap:10px}
+.answer .row{display:flex;flex-wrap:wrap;gap:8px}
+.ans{border:1.5px solid var(--line);background:var(--panel);border-radius:8px;padding:9px 14px;font-weight:500;display:inline-flex;gap:8px;align-items:center}
+.ans kbd{font:500 11px var(--f-mono);color:var(--muted);border:1px solid var(--line);border-radius:3px;padding:0 4px}
+.ans.same[aria-pressed="true"]{background:var(--ok-soft);border-color:var(--ok);color:var(--ok)}
+.ans.diff[aria-pressed="true"]{background:var(--bad-soft);border-color:var(--bad);color:var(--bad)}
+.ans.unsure[aria-pressed="true"]{background:var(--warn-soft);border-color:var(--warn);color:var(--warn)}
+.ans.newc[aria-pressed="true"]{background:var(--new-soft);border-color:var(--new);color:var(--new)}
+textarea{width:100%;min-height:54px;resize:vertical;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);padding:8px 10px;font:inherit;font-size:14px}
+.saved{font-size:12px;color:var(--muted);min-height:1.2em}
+
+.lightbox{position:fixed;inset:0;z-index:20;background:var(--shade);display:grid;place-items:center;padding:16px}
+.lightbox img{max-width:100%;max-height:100%;object-fit:contain}
+.lightbox button{position:absolute;top:calc(env(safe-area-inset-top,0px) + 12px);right:16px;background:#fff;color:#111;border:0;border-radius:6px;padding:6px 12px}
+
+@media (max-width:860px){
+  .layout{grid-template-columns:1fr}
+  nav.queue{position:static;max-height:220px}
+}
+@media (max-width:560px){
+  .compare{grid-template-columns:1fr}
+  .cardhead .nav{margin-left:0}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="titlerow">
+      <h1>Сверка щитов: объезд 10.09 ↔ база августа</h1>
+      <span class="sub">Навои · Джизак · решаете вы, скрипт только предложил</span>
+    </div>
+    <div class="progress">
+      <span id="progText">Проверено 0 из 0</span>
+      <div class="bar" id="bar" aria-hidden="true"></div>
+      <div class="legend">
+        <span style="--c:var(--ok)">тот же</span>
+        <span style="--c:var(--bad)">разные</span>
+        <span style="--c:var(--new)">новый</span>
+        <span style="--c:var(--warn)">не уверен</span>
+      </div>
+    </div>
+    <div class="filters" id="filters" role="group" aria-label="Фильтр"></div>
+    <div class="exportrow">
+      <button type="button" class="btn-s" id="btnDownload">Скачать ответы (.json)</button>
+      <button type="button" class="btn-s" id="btnCopy">Скопировать ответы</button>
+      <span class="saved" id="exportMsg">Ответы хранятся в этом браузере. Когда закончите — скачайте файл и пришлите его Claude.</span>
+    </div>
+    <div class="banner" id="banner" hidden></div>
+  </header>
+
+  <div class="layout">
+    <nav class="queue" id="queue" aria-label="Очередь"></nav>
+    <main class="card" id="card"></main>
+  </div>
+</div>
+
+<div class="lightbox" id="lb" hidden><img id="lbImg" alt=""><button type="button" id="lbClose">Закрыть</button></div>
+
+<script>
+const AUTO_TEXT = {
+  "проверить": "Скрипт не уверен: рядом стоит конструкция, но тип или расстояние не сходятся.",
+  "смена бренда": "Скрипт решил: это тот же щит, но реклама на нём за месяц сменилась.",
+  "смена статуса": "Скрипт решил: это тот же щит, но он сменил статус (занят ↔ свободен).",
+  "совпало": "Скрипт решил: тот же щит, тот же бренд.",
+  "новое в объезде": "Скрипт решил: этого щита в базе нет. Рядом — ближайшие конструкции базы (до 300 м)."
+};
+const PILL = {"проверить":"проверить","смена бренда":"смена","смена статуса":"смена","совпало":"совпало","новое в объезде":"новое"};
+const FILTERS = [
+  ["all","Все"],["todo","Не проверены"],["проверить","Проверить"],["смена","Смена бренда/статуса"],
+  ["совпало","Совпало"],["новое в объезде","Новые"]
+];
+
+let ITEMS = [], cur = 0, filter = "todo", db = null, decisions = {}, sel = {}, candIdx = {};
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmtC = (lat, lon) => lat == null ? "" : lat.toFixed(6) + ", " + lon.toFixed(6);
+
+function lsGet(){ try { return JSON.parse(localStorage.getItem("tour-review") || "{}"); } catch(e){ return {}; } }
+function lsSet(){ try { localStorage.setItem("tour-review", JSON.stringify(decisions)); } catch(e){} }
+
+function visible(){
+  return ITEMS.map((it, i) => [it, i]).filter(([it]) => {
+    if (filter === "all") return true;
+    if (filter === "todo") return !decisions[it.key];
+    if (filter === "смена") return it.auto.startsWith("смена");
+    return it.auto === filter;
+  });
+}
+
+function dotClass(d){
+  if (!d) return "";
+  return {same:"same", diff:"diff", unsure:"unsure", new:"newc"}[d.verdict] || "";
+}
+
+function renderTop(){
+  const n = ITEMS.length, done = ITEMS.filter(i => decisions[i.key]).length;
+  const c = {same:0, diff:0, new:0, unsure:0};
+  ITEMS.forEach(i => { const d = decisions[i.key]; if (d && c[d.verdict] != null) c[d.verdict]++; });
+  $("#progText").textContent = `Проверено ${done} из ${n}`;
+  const seg = (k, v) => `<i style="width:${n ? c[k] / n * 100 : 0}%;background:var(${v})"></i>`;
+  $("#bar").innerHTML = seg("same","--ok") + seg("diff","--bad") + seg("new","--new") + seg("unsure","--warn");
+  $("#filters").innerHTML = FILTERS.map(([k, l]) => {
+    const cnt = ITEMS.filter(it => k === "all" ? true : k === "todo" ? !decisions[it.key]
+      : k === "смена" ? it.auto.startsWith("смена") : it.auto === k).length;
+    return `<button type="button" class="chip" data-f="${esc(k)}" aria-pressed="${filter === k}">${esc(l)} · ${cnt}</button>`;
+  }).join("");
+}
+
+function renderQueue(){
+  const v = visible();
+  $("#queue").innerHTML = v.length ? v.map(([it, i]) =>
+    `<button type="button" class="qitem" data-i="${i}" aria-current="${i === cur}">
+      <span class="dot ${dotClass(decisions[it.key])}"></span>
+      <span class="qb">${esc(it.tour.brand || (it.tour.status === "место свободно" ? "свободный щит" : "—"))} <span class="qid">${esc(it.tour.type)}</span></span>
+      <span class="qid">${esc(it.tour.id)}</span>
+    </button>`).join("")
+    : `<p style="padding:14px;margin:0;color:var(--muted);font-size:13px">В этом фильтре пусто.</p>`;
+}
+
+function photoBlock(prefix, imgs){
+  const k = prefix;
+  const s = Math.min(sel[k] || 0, Math.max(imgs.length - 1, 0));
+  const main = imgs.length
+    ? `<img src="${esc(imgs[s])}" alt="Фото конструкции" data-zoom="${esc(imgs[s])}" loading="lazy">`
+    : `<div class="none">Фото в базе не сохранилось — сверяйте по бренду, тексту и адресу</div>`;
+  const th = imgs.length > 1 ? `<div class="thumbs">${imgs.map((src, j) =>
+    `<button type="button" data-sel="${esc(k)}" data-j="${j}" aria-pressed="${j === s}" aria-label="Кадр ${j + 1}"><img src="${esc(src)}" alt="" loading="lazy"></button>`).join("")}</div>` : "";
+  return `<div class="photo">${main}</div>${th}`;
+}
+
+function metaList(o, isBase){
+  const rows = [
+    ["Тип", esc(o.type)],
+    ["Бренд", esc(o.brand || (o.status === "место свободно" ? "— (свободно)" : "—"))],
+    ["Текст", esc(o.msg)],
+    ["Статус", esc(o.status)],
+    ["Дата", esc(o.date) + (o.time ? " " + esc(o.time) : "")],
+    ["Адрес", esc(o.address)],
+    ["Координаты", `<span class="mono">${esc(fmtC(o.lat, o.lon))}</span>`],
+  ];
+  if (isBase && o.source) rows.push(["Источник", esc(o.source)]);
+  if (!isBase && o.frames > 1) rows.push(["Кадров", o.frames]);
+  return `<dl class="meta">${rows.filter(r => r[1]).map(r => `<dt>${r[0]}</dt><dd>${r[1]}</dd>`).join("")}</dl>`;
+}
+
+function renderCard(){
+  const it = ITEMS[cur];
+  if (!it){ $("#card").innerHTML = "<p>Нет карточек.</p>"; return; }
+  const d = decisions[it.key];
+  const ci = Math.min(candIdx[it.key] || 0, Math.max(it.cands.length - 1, 0));
+  const cand = it.cands[ci];
+  const v = visible(), pos = v.findIndex(([, i]) => i === cur);
+  const question = it.kind === "pair" ? "Это тот же самый щит?" : "Есть ли этот щит в базе?";
+
+  let right;
+  if (!cand){
+    right = `<div class="side"><h3>База августа</h3><div class="photo"><div class="none">В базе нет ни одной конструкции ближе 300 м</div></div></div>`;
+  } else {
+    const tabs = it.cands.length > 1 ? `<div class="tabs" role="group" aria-label="Кандидаты">${it.cands.map((c, j) =>
+      `<button type="button" data-cand="${j}" aria-pressed="${j === ci}">${esc(c.brand || c.type || c.id)} · ${c.dist} м</button>`).join("")}</div>` : "";
+    const maps = `https://www.google.com/maps/dir/${it.tour.lat},${it.tour.lon}/${cand.lat},${cand.lon}`;
+    right = `<div class="side"><h3>База августа · ${esc(cand.id)}</h3>${tabs}
+      ${photoBlock("b:" + it.key + ":" + ci, cand.imgs)}
+      <div><span class="distance">${cand.dist} м</span> между точками съёмки · <a class="maplink" href="${maps}" target="_blank" rel="noopener">обе точки на карте</a></div>
+      ${metaList(cand, true)}</div>`;
+  }
+
+  let buttons;
+  if (it.kind === "pair"){
+    buttons = `
+      <button type="button" class="ans same" data-v="same" aria-pressed="${d?.verdict === "same"}">Тот же щит <kbd>1</kbd></button>
+      <button type="button" class="ans diff" data-v="diff" aria-pressed="${d?.verdict === "diff"}">Разные щиты <kbd>2</kbd></button>
+      <button type="button" class="ans unsure" data-v="unsure" aria-pressed="${d?.verdict === "unsure"}">Не уверен <kbd>3</kbd></button>`;
+  } else {
+    const same = d?.verdict === "same" && cand && d.candidate === cand.id;
+    buttons = `
+      ${cand ? `<button type="button" class="ans same" data-v="same" aria-pressed="${same}">Это он — ${esc(cand.id)} <kbd>1</kbd></button>` : ""}
+      <button type="button" class="ans newc" data-v="new" aria-pressed="${d?.verdict === "new"}">Новый, в базе нет <kbd>2</kbd></button>
+      <button type="button" class="ans unsure" data-v="unsure" aria-pressed="${d?.verdict === "unsure"}">Не уверен <kbd>3</kbd></button>`;
+  }
+  const savedTxt = d ? "Ответ сохранён" + (d.verdict === "same" && d.candidate && it.kind === "new" ? " · совпадает с " + d.candidate : "") : "Ответа пока нет";
+
+  $("#card").innerHTML = `
+    <div class="cardhead">
+      <span class="pill ${PILL[it.auto]}">${esc(it.auto)}</span>
+      <h2>${esc(it.tour.brand || it.tour.type)}</h2>
+      <span class="q">${esc(it.city)} · ${pos + 1 > 0 ? (pos + 1) + " из " + v.length : "вне фильтра"}</span>
+      <div class="nav"><button type="button" class="btn-s" data-go="-1">← Назад</button><button type="button" class="btn-s" data-go="1">Дальше →</button></div>
+    </div>
+    <p class="explain">${esc(AUTO_TEXT[it.auto])} Координаты — место, где стоял фотограф, а не сам щит: у одного щита они могут расходиться на 50–150 м.</p>
+    <div class="compare">
+      <div class="side"><h3>Объезд · ${esc(it.tour.id)}</h3>
+        ${photoBlock("t:" + it.key, it.tour.imgs)}
+        ${metaList(it.tour, false)}
+      </div>
+      ${right}
+    </div>
+    <div class="answer">
+      <strong>${question}</strong>
+      <div class="row">${buttons}</div>
+      <label for="note" class="saved">Комментарий (по желанию)</label>
+      <textarea id="note" placeholder="Например: тот же щит, но сменили рекламу / в базе ошибка бренда">${esc(d?.note || "")}</textarea>
+      <div class="saved" id="savedMsg">${savedTxt}</div>
+    </div>`;
+}
+
+function renderAll(){ renderTop(); renderQueue(); renderCard(); }
+
+async function save(key, patch){
+  const prev = decisions[key] || {};
+  const next = {...prev, ...patch, updatedAt: new Date().toISOString()};
+  decisions[key] = next;
+  lsSet();
+  renderAll();
+  if (db){
+    try { await db.doc("decisions/" + key).set(next); }
+    catch(e){
+      const m = $("#savedMsg"); if (m) m.textContent = "Не удалось сохранить на сервер (" + (e.code || "ошибка") + "). Ответ остался в этом браузере.";
+    }
+  }
+}
+
+function go(step){
+  const v = visible();
+  if (!v.length) return;
+  let pos = v.findIndex(([, i]) => i === cur);
+  pos = pos < 0 ? 0 : Math.max(0, Math.min(v.length - 1, pos + step));
+  cur = v[pos][1];
+  renderAll();
+  window.scrollTo({top: 0});
+}
+
+function answer(vd){
+  const it = ITEMS[cur];
+  const ci = candIdx[it.key] || 0;
+  const cand = it.cands[ci];
+  if (vd === "same" && it.kind === "new" && !cand) return;
+  const note = ($("#note")?.value || "").trim();
+  const patch = {verdict: vd, note, kind: it.kind, tour: it.tour.id, auto: it.auto};
+  patch.candidate = (vd === "same" && cand) ? cand.id : (it.kind === "pair" ? cand?.id ?? null : null);
+  const wasTodo = filter === "todo";
+  save(it.key, patch).then(() => { if (wasTodo) go(0); });
+  if (!wasTodo) setTimeout(() => go(1), 250);
+}
+
+document.addEventListener("click", e => {
+  const t = e.target.closest("button, img[data-zoom]");
+  if (!t) return;
+  if (t.dataset.f){ filter = t.dataset.f; const v = visible(); if (v.length && !v.some(([, i]) => i === cur)) cur = v[0][1]; renderAll(); }
+  else if (t.dataset.i){ cur = +t.dataset.i; renderAll(); if (innerWidth < 860) $("#card").scrollIntoView(); }
+  else if (t.dataset.go){ go(+t.dataset.go); }
+  else if (t.dataset.v){ answer(t.dataset.v); }
+  else if (t.dataset.cand){ candIdx[ITEMS[cur].key] = +t.dataset.cand; renderCard(); }
+  else if (t.dataset.sel){ sel[t.dataset.sel] = +t.dataset.j; renderCard(); }
+  else if (t.dataset.zoom){ $("#lbImg").src = t.dataset.zoom; $("#lb").hidden = false; }
+  else if (t.id === "lbClose"){ $("#lb").hidden = true; }
+});
+$("#lb").addEventListener("click", e => { if (e.target.id === "lb") $("#lb").hidden = true; });
+document.addEventListener("focusout", e => {
+  if (e.target.id !== "note") return;
+  const it = ITEMS[cur], d = decisions[it.key], val = e.target.value.trim();
+  if (d && (d.note || "") !== val) save(it.key, {note: val});
+});
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "TEXTAREA") return;
+  if (!$("#lb").hidden && e.key === "Escape"){ $("#lb").hidden = true; return; }
+  const it = ITEMS[cur]; if (!it) return;
+  if (e.key === "ArrowRight") go(1);
+  else if (e.key === "ArrowLeft") go(-1);
+  else if (e.key === "1") answer("same");
+  else if (e.key === "2") answer(it.kind === "pair" ? "diff" : "new");
+  else if (e.key === "3") answer("unsure");
+});
+
+function exportText(){
+  return JSON.stringify({exported: new Date().toISOString(), total: ITEMS.length, decisions}, null, 1);
+}
+$("#btnDownload").addEventListener("click", () => {
+  const blob = new Blob([exportText()], {type: "application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "sverka_otvety_" + new Date().toISOString().slice(0, 10) + ".json";
+  document.body.appendChild(a); a.click(); a.remove();
+  $("#exportMsg").textContent = "Файл скачан — пришлите его Claude.";
+});
+$("#btnCopy").addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText(exportText()); $("#exportMsg").textContent = "Скопировано — вставьте в чат с Claude."; }
+  catch(e){ $("#exportMsg").textContent = "Не удалось скопировать — используйте «Скачать ответы»."; }
+});
+
+async function start(){
+  try {
+    ITEMS = await (await fetch("data.json")).json();
+  } catch(e){
+    $("#card").innerHTML = "<p>Не удалось загрузить данные страницы. Обновите страницу.</p>"; return;
+  }
+  decisions = lsGet();
+  const v = visible(); cur = v.length ? v[0][1] : 0;
+  renderAll();
+  db = window.claude?.use ? await window.claude.use("db") : null;
+  if (!db) return;
+  db.collection("decisions").onSnapshot(snap => {
+    const server = {};
+    snap.docs.forEach(doc => { server[doc.id] = doc.data(); });
+    const local = decisions;
+    decisions = {...local, ...server};
+    lsSet();
+    renderTop(); renderQueue();
+    const it = ITEMS[cur];
+    if (it && document.activeElement?.id !== "note") renderCard();
+  }, err => {
+    const b = $("#banner"); b.hidden = false;
+    b.textContent = "Связь с хранилищем ответов потеряна (" + (err.code || "ошибка") + "). Новые ответы пока сохраняются в браузере — обновите страницу.";
+  });
+}
+start();
+</script>
+
+</body>
+</html>
