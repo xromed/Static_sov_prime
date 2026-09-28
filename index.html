@@ -250,6 +250,7 @@ function metaList(o, isBase){
     ["Координаты", `<span class="mono">${esc(fmtC(o.lat, o.lon))}</span>`],
   ];
   if (isBase && o.source) rows.push(["Источник", esc(o.source)]);
+  if (isBase && o.note) rows.push(["Внимание", `<span style="color:var(--warn)">${esc(o.note)}</span>`]);
   if (!isBase && o.frames > 1) rows.push(["Кадров", o.frames]);
   return `<dl class="meta">${rows.filter(r => r[1]).map(r => `<dt>${r[0]}</dt><dd>${r[1]}</dd>`).join("")}</dl>`;
 }
