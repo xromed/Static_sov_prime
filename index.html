@@ -105,6 +105,16 @@ dl.meta dd{margin:0;overflow-wrap:anywhere}
 .tabs{display:flex;flex-wrap:wrap;gap:6px}
 .tabs button{border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:4px 10px;font-size:13px;font-variant-numeric:tabular-nums}
 .tabs button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.ai{border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:grid;gap:8px;font-size:13.5px;background:var(--bg)}
+.ai.none{color:var(--muted)}
+.ai p{margin:0}
+.ai ul{margin:4px 0 6px;padding-left:18px}
+.ai details summary{cursor:pointer;color:var(--accent)}
+.aihead{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center}
+.aiv{font:600 13px var(--f-head);letter-spacing:.03em;text-transform:uppercase;padding:4px 8px;border-radius:4px;background:var(--soft)}
+.aiv.same{background:var(--ok-soft);color:var(--ok)} .aiv.diff{background:var(--bad-soft);color:var(--bad)} .aiv.unsure{background:var(--warn-soft);color:var(--warn)}
+.aic{color:var(--muted);font-size:12.5px;font-variant-numeric:tabular-nums}
+.aiflag{color:var(--bad);font-weight:600}
 .distance{font:600 15px var(--f-head);font-variant-numeric:tabular-nums}
 .maplink{font-size:13px;color:var(--accent)}
 
@@ -177,7 +187,7 @@ const AUTO_TEXT = {
 };
 const PILL = {"проверить":"проверить","смена бренда":"смена","смена статуса":"смена","совпало":"совпало","новое в объезде":"новое"};
 const FILTERS = [
-  ["all","Все"],["todo","Не проверены"],["проверить","Проверить"],["смена","Смена бренда/статуса"],
+  ["all","Все"],["todo","Не проверены"],["conflict","ИИ спорит со скриптом"],["проверить","Проверить"],["смена","Смена бренда/статуса"],
   ["совпало","Совпало"],["новое в объезде","Новые"]
 ];
 
@@ -193,6 +203,7 @@ function visible(){
   return ITEMS.map((it, i) => [it, i]).filter(([it]) => {
     if (filter === "all") return true;
     if (filter === "todo") return !decisions[it.key];
+    if (filter === "conflict") return it.ai_conflict;
     if (filter === "смена") return it.auto.startsWith("смена");
     return it.auto === filter;
   });
@@ -211,7 +222,7 @@ function renderTop(){
   const seg = (k, v) => `<i style="width:${n ? c[k] / n * 100 : 0}%;background:var(${v})"></i>`;
   $("#bar").innerHTML = seg("same","--ok") + seg("diff","--bad") + seg("new","--new") + seg("unsure","--warn");
   $("#filters").innerHTML = FILTERS.map(([k, l]) => {
-    const cnt = ITEMS.filter(it => k === "all" ? true : k === "todo" ? !decisions[it.key]
+    const cnt = ITEMS.filter(it => k === "all" ? true : k === "todo" ? !decisions[it.key] : k === "conflict" ? it.ai_conflict
       : k === "смена" ? it.auto.startsWith("смена") : it.auto === k).length;
     return `<button type="button" class="chip" data-f="${esc(k)}" aria-pressed="${filter === k}">${esc(l)} · ${cnt}</button>`;
   }).join("");
@@ -223,7 +234,7 @@ function renderQueue(){
     `<button type="button" class="qitem" data-i="${i}" aria-current="${i === cur}">
       <span class="dot ${dotClass(decisions[it.key])}"></span>
       <span class="qb">${esc(it.tour.brand || (it.tour.status === "место свободно" ? "свободный щит" : "—"))} <span class="qid">${esc(it.tour.type)}</span></span>
-      <span class="qid">${esc(it.tour.id)}</span>
+      <span class="qid">${it.ai_conflict ? '<b class="aiflag">ИИ≠</b> ' : ""}${esc(it.tour.id)}</span>
     </button>`).join("")
     : `<p style="padding:14px;margin:0;color:var(--muted);font-size:13px">В этом фильтре пусто.</p>`;
 }
@@ -255,6 +266,26 @@ function metaList(o, isBase){
   return `<dl class="meta">${rows.filter(r => r[1]).map(r => `<dt>${r[0]}</dt><dd>${r[1]}</dd>`).join("")}</dl>`;
 }
 
+const AI_CLS = {"та же": "same", "разные": "diff", "не уверен": "unsure"};
+function aiBlock(ai){
+  if (!ai) return `<div class="ai none">Визуальная сверка для этой пары ещё не сделана</div>`;
+  const li = a => (a || []).map(x => `<li>${esc(x)}</li>`).join("");
+  return `<div class="ai">
+    <div class="aihead"><span class="aiv ${AI_CLS[ai.verdict] || ""}">ИИ по фото: ${esc(ai.verdict)}</span>
+      <span class="aic">уверенность ${Math.round((ai.confidence || 0) * 100)}%</span></div>
+    <p>${esc(ai.summary)}</p>
+    <dl class="meta">
+      <dt>Опора (объезд)</dt><dd>${esc(ai.opora_a) || "—"}</dd>
+      <dt>Опора (база)</dt><dd>${esc(ai.opora_b) || "—"}</dd>
+      <dt>Табличка (объезд)</dt><dd class="mono">${esc(ai.plate_a) || "не видно"}</dd>
+      <dt>Табличка (база)</dt><dd class="mono">${esc(ai.plate_b) || "не видно"}</dd>
+    </dl>
+    <details><summary>Доводы</summary>
+      ${ai.same_signs?.length ? `<strong>Совпадает</strong><ul>${li(ai.same_signs)}</ul>` : ""}
+      ${ai.diff_signs?.length ? `<strong>Отличается</strong><ul>${li(ai.diff_signs)}</ul>` : ""}
+    </details></div>`;
+}
+
 function renderCard(){
   const it = ITEMS[cur];
   if (!it){ $("#card").innerHTML = "<p>Нет карточек.</p>"; return; }
@@ -269,9 +300,10 @@ function renderCard(){
     right = `<div class="side"><h3>База августа</h3><div class="photo"><div class="none">В базе нет ни одной конструкции ближе 300 м</div></div></div>`;
   } else {
     const tabs = it.cands.length > 1 ? `<div class="tabs" role="group" aria-label="Кандидаты">${it.cands.map((c, j) =>
-      `<button type="button" data-cand="${j}" aria-pressed="${j === ci}">${esc(c.brand || c.type || c.id)} · ${c.dist} м</button>`).join("")}</div>` : "";
+      `<button type="button" data-cand="${j}" aria-pressed="${j === ci}">${c.ai ? (c.ai.verdict === "та же" ? "✓ " : c.ai.verdict === "разные" ? "✗ " : "? ") : ""}${esc(c.brand || c.type || c.id)} · ${c.dist} м</button>`).join("")}</div>` : "";
     const maps = `https://www.google.com/maps/dir/${it.tour.lat},${it.tour.lon}/${cand.lat},${cand.lon}`;
     right = `<div class="side"><h3>База августа · ${esc(cand.id)}</h3>${tabs}
+      ${aiBlock(cand.ai)}
       ${photoBlock("b:" + it.key + ":" + ci, cand.imgs)}
       <div><span class="distance">${cand.dist} м</span> между точками съёмки · <a class="maplink" href="${maps}" target="_blank" rel="noopener">обе точки на карте</a></div>
       ${metaList(cand, true)}</div>`;
@@ -299,7 +331,7 @@ function renderCard(){
       <span class="q">${esc(it.city)} · ${pos + 1 > 0 ? (pos + 1) + " из " + v.length : "вне фильтра"}</span>
       <div class="nav"><button type="button" class="btn-s" data-go="-1">← Назад</button><button type="button" class="btn-s" data-go="1">Дальше →</button></div>
     </div>
-    <p class="explain">${esc(AUTO_TEXT[it.auto])} Координаты — место, где стоял фотограф, а не сам щит: у одного щита они могут расходиться на 50–150 м.</p>
+    <p class="explain">${esc(AUTO_TEXT[it.auto])} Координаты — место, где стоял фотограф, а не сам щит. Сравнивайте железо: опору, раму, подсветку, табличку оператора с телефоном; реклама могла смениться.</p>
     <div class="compare">
       <div class="side"><h3>Объезд · ${esc(it.tour.id)}</h3>
         ${photoBlock("t:" + it.key, it.tour.imgs)}
