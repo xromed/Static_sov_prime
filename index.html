@@ -203,7 +203,7 @@ textarea{width:100%;min-height:54px;resize:vertical;border:1px solid var(--line)
 <script>
 // Сверка ПАРАМИ: одно фото щита из объезда ↔ один кандидат из базы (правило Амира 29.09.2026).
 // «Тот же» по фото закрывает остальные пары этого фото; все «разные» → щит новый.
-const FILTERS = [["todo","Не проверены"],["aisame","ИИ считает тем же"],["done","Проверенные"],["all","Все"]];
+const FILTERS = [["todo","Не проверены"],["aisame","ИИ считает тем же"],["done","Проверенные"],["rule","Отсеяно автоматически"],["all","Все"]];
 const V = {same: ["Один и тот же щит", "same"], diff: ["Разные щиты", "diff"], unsure: ["Не уверен", "unsure"], bad: ["Брак фото", "diff"]};
 let ITEMS = [], PAIRS = [], cur = 0, filter = "todo", db = null, decisions = {}, sel = {};
 const $ = s => document.querySelector(s);
@@ -241,8 +241,10 @@ function legacy(p){
 }
 function own(p){ return decisions[p.key]?.v || null; }
 // ответ пары: свой; иначе прежний — засчитывается только если у карточки было одно фото объезда
+function ruleOf(p){ return (p.it.auto_pairs || {})[p.t.split("/").pop() + "|" + p.c.id] || null; }
 function answerOf(p){
   const o = own(p); if (o) return {v: o, src: "own"};
+  const r = ruleOf(p); if (r) return {v: "diff", src: "rule", reason: r};
   const l = legacy(p);
   if (l && p.it.tour.imgs.length === 1) return {v: l, src: "legacy"};
   return null;
@@ -258,7 +260,7 @@ function closedBy(p){
 function visible(){
   return PAIRS.map((p, i) => [p, i]).filter(([p]) =>
     filter === "all" ? true : filter === "todo" ? !closedBy(p) : filter === "done" ? !!closedBy(p)
-    : p.c.ai?.verdict === "та же");
+    : filter === "rule" ? (!!ruleOf(p) && !own(p)) : p.c.ai?.verdict === "та же");
 }
 
 function renderTop(){
@@ -276,7 +278,8 @@ function renderTop(){
   const seg = (k, v) => `<i style="width:${photos.length ? st[k] / photos.length * 100 : 0}%;background:var(${v})"></i>`;
   $("#bar").innerHTML = seg("same","--ok") + seg("new","--new") + seg("bad","--bad");
   $("#filters").innerHTML = FILTERS.map(([k, l]) => {
-    const cnt = PAIRS.filter(p => k === "all" ? true : k === "todo" ? !closedBy(p) : k === "done" ? !!closedBy(p) : p.c.ai?.verdict === "та же").length;
+    const cnt = PAIRS.filter(p => k === "all" ? true : k === "todo" ? !closedBy(p) : k === "done" ? !!closedBy(p)
+      : k === "rule" ? (!!ruleOf(p) && !own(p)) : p.c.ai?.verdict === "та же").length;
     return `<button type="button" class="chip" data-f="${k}" aria-pressed="${filter === k}">${esc(l)} · ${cnt}</button>`;
   }).join("");
 }
@@ -372,8 +375,9 @@ function renderCard(){
   const bs = Math.min(sel[p.key] || 0, Math.max(c.imgs.length - 1, 0));
   const maps = `https://www.google.com/maps/dir/${it.tour.lat},${it.tour.lon}/${c.lat},${c.lon}`;
   const AIW = {"та же": "ИИ: тот же щит", "разные": "ИИ: разные щиты", "не уверен": "ИИ: не уверен"};
-  const status = a ? (a.src === "auto" ? (a.v === "bad" ? "Фото помечено как брак в другой паре" : "Это фото уже совпало с другим кандидатом — пара закрыта")
+  const status = a ? (a.src === "rule" ? "Отсеяно автоматически — " + a.reason + ". Если это ошибка, ответьте сами." : a.src === "auto" ? (a.v === "bad" ? "Фото помечено как брак в другой паре" : "Это фото уже совпало с другим кандидатом — пара закрыта")
       : a.src === "legacy" ? "Засчитан прежний ответ: " + V[a.v][0].toLowerCase() : "Ваш ответ: " + V[a.v][0].toLowerCase()) : "Ответа пока нет";
+  const ruleNote = a?.src === "rule" ? `<div class="ainote">Отсеяно автоматически: <b>${esc(a.reason)}</b>. Если это ошибка — ответьте сами, ваш ответ важнее.</div>` : "";
   const hint = !a && lg ? `<div class="ainote">Прежний ответ на карточку целиком подсказывает: <b>${esc(V[lg][0].toLowerCase())}</b>. Проверьте именно эту пару.</div>` : "";
   $("#card").innerHTML = `
     <div class="cardhead">
@@ -382,7 +386,7 @@ function renderCard(){
       <div class="nav"><button type="button" class="btn-s" data-go="-1">← Назад</button><button type="button" class="btn-s" data-go="1">Дальше →</button></div>
     </div>
     <p class="explain-short">Слева — фото ${p.ti + 1} из ${it.tour.imgs.length} этого места из объезда, справа — кандидат ${p.order + 1} из ${p.n} из базы. Щит обведён жёлтой рамкой. Сравнивайте железо: опору, раму, табличку оператора, окружение; реклама могла смениться. Двусторонний щит — один носитель со сторонами А и Б.</p>
-    ${hint}
+    ${ruleNote}${hint}
     <div class="toolbar"><span><span class="distance">${c.dist} м</span> между точками съёмки · <a class="maplink" href="${maps}" target="_blank" rel="noopener">обе точки на карте</a>${c.ai ? " · " + AIW[c.ai.verdict] : ""}</span></div>
     <div class="compare">
       <div class="side"><h3>Объезд 10.09 — ${esc(it.tour.brand || it.tour.type)}</h3>${photoBlock("t:" + p.key, [p.t], [(it.tour.boxes || [])[p.ti]])}</div>
@@ -391,10 +395,10 @@ function renderCard(){
     <div class="answer">
       <strong>Это один и тот же щит?</strong>
       <div class="row">
-        <button type="button" class="ans same" data-v="same" aria-pressed="${a?.src !== "auto" && a?.v === "same"}">Один и тот же щит <kbd>1</kbd></button>
-        <button type="button" class="ans diff" data-v="diff" aria-pressed="${a?.src !== "auto" && a?.v === "diff"}">Разные щиты <kbd>2</kbd></button>
-        <button type="button" class="ans unsure" data-v="unsure" aria-pressed="${a?.src !== "auto" && a?.v === "unsure"}">Не уверен <kbd>3</kbd></button>
-        <button type="button" class="ans diff" data-v="bad" aria-pressed="${a?.src !== "auto" && a?.v === "bad"}">Брак фото объезда <kbd>4</kbd></button>
+        <button type="button" class="ans same" data-v="same" aria-pressed="${a?.src === "own" || a?.src === "legacy" ? a.v === "same" : false}">Один и тот же щит <kbd>1</kbd></button>
+        <button type="button" class="ans diff" data-v="diff" aria-pressed="${a?.src === "own" || a?.src === "legacy" ? a.v === "diff" : false}">Разные щиты <kbd>2</kbd></button>
+        <button type="button" class="ans unsure" data-v="unsure" aria-pressed="${a?.src === "own" || a?.src === "legacy" ? a.v === "unsure" : false}">Не уверен <kbd>3</kbd></button>
+        <button type="button" class="ans diff" data-v="bad" aria-pressed="${a?.src === "own" || a?.src === "legacy" ? a.v === "bad" : false}">Брак фото объезда <kbd>4</kbd></button>
       </div>
       <label for="note" class="saved">Комментарий (по желанию)</label>
       <textarea id="note" placeholder="Например: та же опора и табличка, другая сторона щита">${esc(decisions[p.key]?.note || "")}</textarea>
