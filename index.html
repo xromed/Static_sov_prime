@@ -177,17 +177,17 @@ textarea{width:100%;min-height:54px;resize:vertical;border:1px solid var(--line)
       <span id="progText">Проверено 0 из 0</span>
       <div class="bar" id="bar" aria-hidden="true"></div>
       <div class="legend">
-        <span style="--c:var(--ok)">тот же</span>
-        <span style="--c:var(--bad)">разные</span>
+        <span style="--c:var(--ok)">есть в базе</span>
+        <span style="--c:var(--bad)">брак</span>
         <span style="--c:var(--new)">новый</span>
-        <span style="--c:var(--warn)">не уверен</span>
+        
       </div>
     </div>
     <div class="filters" id="filters" role="group" aria-label="Фильтр"></div>
     <div class="exportrow">
       <button type="button" class="btn-s" id="btnDownload">Скачать ответы (.json)</button>
       <button type="button" class="btn-s" id="btnCopy">Скопировать ответы</button>
-      <span class="saved" id="exportMsg">Ответы хранятся в этом браузере. Когда закончите — скачайте файл и пришлите его Claude.</span>
+      <span class="saved" id="exportMsg">Ответы сохраняются в этом браузере — Claude заберёт их сам.</span>
     </div>
     <div class="banner" id="banner" hidden></div>
   </header>
@@ -201,81 +201,95 @@ textarea{width:100%;min-height:54px;resize:vertical;border:1px solid var(--line)
 <div class="lightbox" id="lb" hidden><img id="lbImg" alt=""><button type="button" id="lbClose">Закрыть</button></div>
 
 <script>
-const AUTO_TEXT = {
-  "проверить": "Скрипт не уверен: рядом стоит конструкция, но тип или расстояние не сходятся.",
-  "смена бренда": "Скрипт решил: это тот же щит, но реклама на нём за месяц сменилась.",
-  "смена статуса": "Скрипт решил: это тот же щит, но он сменил статус (занят ↔ свободен).",
-  "совпало": "Скрипт решил: тот же щит, тот же бренд.",
-  "новое в объезде": "Скрипт решил: этого щита в базе нет. Рядом — ближайшие конструкции базы (до 300 м)."
-};
-const PILL = {"проверить":"проверить","смена бренда":"смена","смена статуса":"смена","совпало":"совпало","новое в объезде":"новое"};
-const FILTERS = [
-  ["all","Все"],["todo","Не проверены"],["conflict","ИИ спорит со скриптом"],["проверить","Проверить"],["смена","Смена бренда/статуса"],
-  ["совпало","Совпало"],["новое в объезде","Новые"]
-];
-
-let ITEMS = [], cur = 0, filter = "todo", db = null, decisions = {}, sel = {}, candIdx = {};
+// Сверка ПАРАМИ: одно фото щита из объезда ↔ один кандидат из базы (правило Амира 29.09.2026).
+// «Тот же» по фото закрывает остальные пары этого фото; все «разные» → щит новый.
+const FILTERS = [["todo","Не проверены"],["aisame","ИИ считает тем же"],["done","Проверенные"],["all","Все"]];
+const V = {same: ["Один и тот же щит", "same"], diff: ["Разные щиты", "diff"], unsure: ["Не уверен", "unsure"], bad: ["Брак фото", "diff"]};
+let ITEMS = [], PAIRS = [], cur = 0, filter = "todo", db = null, decisions = {}, sel = {};
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const fmtC = (lat, lon) => lat == null ? "" : lat.toFixed(6) + ", " + lon.toFixed(6);
-
+const cname = c => c.brand || (c.status === "место свободно" ? "свободный щит" : c.type);
 function lsGet(){ try { return JSON.parse(localStorage.getItem("tour-review") || "{}"); } catch(e){ return {}; } }
 function lsSet(){ try { localStorage.setItem("tour-review", JSON.stringify(decisions)); } catch(e){} }
 
-function isDone(it){
-  const d = decisions[it.key];
-  if (!d) return false;
-  if (d.photos) return it.tour.imgs.every(n => d.photos[n]);
-  return !!d.verdict;                                   // прежний ответ на карточку целиком
-}
-// сводный вердикт карточки из ответов по фото
-function cardVerdict(it, photos){
-  const vs = it.tour.imgs.map(n => photos[n]?.v).filter(Boolean);
-  if (!vs.length) return null;
-  if (vs.includes("same")) return "same";
-  if (vs.includes("unsure")) return "unsure";
-  return it.kind === "pair" ? "diff" : "new";
-}
-
-function visible(){
-  return ITEMS.map((it, i) => [it, i]).filter(([it]) => {
-    if (filter === "all") return true;
-    if (filter === "todo") return !isDone(it);
-    if (filter === "conflict") return it.ai_conflict;
-    if (filter === "смена") return it.auto.startsWith("смена");
-    return it.auto === filter;
+function buildPairs(){
+  PAIRS = [];
+  ITEMS.forEach(it => {
+    it.tour.imgs.forEach((t, ti) => {
+      const cs = it.cands.map((c, j) => ({c, j})).sort((x, y) =>
+        ((y.c.ai?.verdict === "та же") - (x.c.ai?.verdict === "та же")) || (x.c.dist - y.c.dist));
+      cs.forEach(({c}, order) => PAIRS.push({key: "p|" + it.key + "|" + t.split("/").pop() + "|" + c.id,
+        photoKey: it.key + "|" + t.split("/").pop(), it, ti, t, c, order, n: cs.length}));
+    });
   });
 }
 
-function dotClass(it){
-  const d = decisions[it.key];
-  if (!d || !isDone(it)) return d ? "part" : "";
-  return {same:"same", diff:"diff", unsure:"unsure", new:"newc"}[d.verdict] || "";
+// прежний ответ на карточку целиком → подсказка / зачёт для пары
+function legacy(p){
+  const d = decisions[p.it.key];
+  if (!d) return null;
+  if (d.photos && d.photos[p.t]){
+    const a = d.photos[p.t];
+    if (a.v === "same") return a.candidate === p.c.id ? "same" : "diff";
+    return a.v === "new" ? "diff" : a.v;
+  }
+  if (!d.verdict) return null;
+  if (p.it.kind === "pair") return d.verdict;
+  if (d.verdict === "same") return d.candidate === p.c.id ? "same" : "diff";
+  return d.verdict === "new" ? "diff" : d.verdict;
+}
+function own(p){ return decisions[p.key]?.v || null; }
+// ответ пары: свой; иначе прежний — засчитывается только если у карточки было одно фото объезда
+function answerOf(p){
+  const o = own(p); if (o) return {v: o, src: "own"};
+  const l = legacy(p);
+  if (l && p.it.tour.imgs.length === 1) return {v: l, src: "legacy"};
+  return null;
+}
+// пара закрыта: есть ответ, или это фото уже совпало с другим кандидатом / помечено браком
+function closedBy(p){
+  const a = answerOf(p); if (a) return a;
+  const sib = PAIRS.filter(q => q.photoKey === p.photoKey && q !== p).map(answerOf).filter(Boolean);
+  if (sib.some(x => x.v === "same")) return {v: "diff", src: "auto"};
+  if (sib.some(x => x.v === "bad")) return {v: "bad", src: "auto"};
+  return null;
+}
+function visible(){
+  return PAIRS.map((p, i) => [p, i]).filter(([p]) =>
+    filter === "all" ? true : filter === "todo" ? !closedBy(p) : filter === "done" ? !!closedBy(p)
+    : p.c.ai?.verdict === "та же");
 }
 
 function renderTop(){
-  const n = ITEMS.length, done = ITEMS.filter(isDone).length;
-  const c = {same:0, diff:0, new:0, unsure:0};
-  ITEMS.forEach(i => { const d = decisions[i.key]; if (d && isDone(i) && c[d.verdict] != null) c[d.verdict]++; });
-  $("#progText").textContent = `Проверено ${done} из ${n}`;
-  const seg = (k, v) => `<i style="width:${n ? c[k] / n * 100 : 0}%;background:var(${v})"></i>`;
-  $("#bar").innerHTML = seg("same","--ok") + seg("diff","--bad") + seg("new","--new") + seg("unsure","--warn");
+  const n = PAIRS.length, done = PAIRS.filter(closedBy).length;
+  const photos = [...new Set(PAIRS.map(p => p.photoKey))];
+  const st = {same: 0, new: 0, bad: 0, open: 0};
+  photos.forEach(k => {
+    const ps = PAIRS.filter(p => p.photoKey === k), as = ps.map(closedBy);
+    if (as.some(a => a?.v === "same")) st.same++;
+    else if (as.some(a => a?.v === "bad")) st.bad++;
+    else if (as.every(a => a && a.v === "diff")) st.new++;
+    else st.open++;
+  });
+  $("#progText").textContent = `Проверено пар ${done} из ${n} · фото объезда: есть в базе ${st.same}, новых ${st.new}, брак ${st.bad}, открыто ${st.open}`;
+  const seg = (k, v) => `<i style="width:${photos.length ? st[k] / photos.length * 100 : 0}%;background:var(${v})"></i>`;
+  $("#bar").innerHTML = seg("same","--ok") + seg("new","--new") + seg("bad","--bad");
   $("#filters").innerHTML = FILTERS.map(([k, l]) => {
-    const cnt = ITEMS.filter(it => k === "all" ? true : k === "todo" ? !isDone(it) : k === "conflict" ? it.ai_conflict
-      : k === "смена" ? it.auto.startsWith("смена") : it.auto === k).length;
-    return `<button type="button" class="chip" data-f="${esc(k)}" aria-pressed="${filter === k}">${esc(l)} · ${cnt}</button>`;
+    const cnt = PAIRS.filter(p => k === "all" ? true : k === "todo" ? !closedBy(p) : k === "done" ? !!closedBy(p) : p.c.ai?.verdict === "та же").length;
+    return `<button type="button" class="chip" data-f="${k}" aria-pressed="${filter === k}">${esc(l)} · ${cnt}</button>`;
   }).join("");
 }
 
 function renderQueue(){
   const v = visible();
-  $("#queue").innerHTML = v.length ? v.map(([it, i]) =>
-    `<button type="button" class="qitem" data-i="${i}" aria-current="${i === cur}">
-      <span class="dot ${dotClass(it)}"></span>
-      <span class="qb">${esc(it.tour.brand || (it.tour.status === "место свободно" ? "свободный щит" : "—"))} <span class="qid">${esc(it.tour.type)}</span></span>
-      <span class="qid">${it.ai_conflict ? '<b class="aiflag">ИИ≠</b>' : ""}</span>
-    </button>`).join("")
-    : `<p style="padding:14px;margin:0;color:var(--muted);font-size:13px">В этом фильтре пусто.</p>`;
+  $("#queue").innerHTML = v.length ? v.map(([p, i]) => {
+    const a = closedBy(p);
+    return `<button type="button" class="qitem" data-i="${i}" aria-current="${i === cur}">
+      <span class="dot ${a ? V[a.v][1] : ""}"></span>
+      <span class="qb">${esc(p.it.tour.brand || p.it.tour.type)} ↔ ${esc(cname(p.c))}</span>
+      <span class="qid">${p.c.dist} м</span></button>`;
+  }).join("") : `<p style="padding:14px;margin:0;color:var(--muted);font-size:13px">В этом фильтре пусто.</p>`;
 }
 
 function photoBlock(prefix, imgs, boxes){
@@ -349,126 +363,67 @@ function baseList(it){                                   // все фото вс
   return it.cands.flatMap((c, j) => c.imgs.map((src, k) => ({c, j, k, src, box: (c.boxes || [])[k]})));
 }
 
+
 function renderCard(){
-  const it = ITEMS[cur];
-  if (!it){ $("#card").innerHTML = "<p>Нет карточек.</p>"; return; }
-  const d = decisions[it.key] || {};
-  const photos = d.photos || {};
-  const T = it.tour.imgs, B = baseList(it);
-  const ti = Math.min(sel["t:" + it.key] || 0, Math.max(T.length - 1, 0));
-  const tname = T[ti];
-  const ans = photos[tname];
-  let bi = sel["b:" + it.key];
-  if (bi == null){ const m = B.findIndex(x => x.src === ans?.match); bi = m >= 0 ? m : 0; }
-  bi = Math.min(bi, Math.max(B.length - 1, 0));
-  const bp = B[bi];
+  const p = PAIRS[cur];
+  if (!p){ $("#card").innerHTML = "<p>Все пары проверены. Напишите Claude — он заберёт ответы.</p>"; return; }
+  const it = p.it, c = p.c, a = closedBy(p), lg = legacy(p);
   const v = visible(), pos = v.findIndex(([, i]) => i === cur);
-  const AIW = {"та же": "ИИ: тот же", "разные": "ИИ: другой", "не уверен": "ИИ: не уверен"};
-  const cname = c => c.brand || (c.status === "место свободно" ? "свободный щит" : c.type);
-
-  const tourStrip = `<div class="strip" role="group" aria-label="Фото объезда">${T.map((src, j) => {
-      const a = photos[src];
-      return `<button type="button" class="sthumb" data-tsel="${j}" aria-pressed="${j === ti}">
-        <img src="${esc(src)}" alt="" loading="lazy"><span class="sl">Фото ${j + 1}</span>
-        <span class="st ${a ? PV[a.v][1] : ""}">${a ? PV[a.v][0] + (a.v === "same" ? " ✓" : "") : "без ответа"}</span></button>`;
-    }).join("")}</div>`;
-
-  const baseStrip = B.length ? `<div class="strip" role="group" aria-label="Фото из базы">${B.map((x, j) => {
-      const isMatch = ans?.v === "same" && ans.match === x.src;
-      return `<button type="button" class="sthumb${isMatch ? " match" : ""}" data-bsel="${j}" aria-pressed="${j === bi}">
-        <img src="${esc(x.src)}" alt="" loading="lazy"><span class="sl">Канд. ${x.j + 1} · фото ${x.k + 1}</span>
-        <span class="st">${esc(cname(x.c))} · ${x.c.dist} м</span></button>`;
-    }).join("")}</div>` : "";
-
-  const leftPhoto = photoBlock("tt:" + it.key, [tname], [(it.tour.boxes || [])[ti]]);
-  const rightPhoto = bp ? photoBlock("bb:" + it.key, [bp.src], [bp.box])
-    : `<div class="photo"><div class="none">${it.cands.length ? "У кандидатов нет фото — сверяйте по данным ниже" : "В базе нет конструкций ближе 300 м"}</div></div>`;
-  const maps = bp ? `https://www.google.com/maps/dir/${it.tour.lat},${it.tour.lon}/${bp.c.lat},${bp.c.lon}` : "";
-
-  const legacy = d.verdict && !d.photos ? `<div class="ainote">Прежний ответ на карточку целиком: <b>${esc({same:"тот же щит", diff:"разные", new:"новый", unsure:"не уверен"}[d.verdict] || d.verdict)}</b>. Можно уточнить по каждому фото — или оставить как есть.</div>` : "";
-  const sameLbl = bp ? `Тот же щит, что справа (кандидат ${bp.j + 1} — ${esc(cname(bp.c))})` : "";
-
+  const bs = Math.min(sel[p.key] || 0, Math.max(c.imgs.length - 1, 0));
+  const maps = `https://www.google.com/maps/dir/${it.tour.lat},${it.tour.lon}/${c.lat},${c.lon}`;
+  const AIW = {"та же": "ИИ: тот же щит", "разные": "ИИ: разные щиты", "не уверен": "ИИ: не уверен"};
+  const status = a ? (a.src === "auto" ? (a.v === "bad" ? "Фото помечено как брак в другой паре" : "Это фото уже совпало с другим кандидатом — пара закрыта")
+      : a.src === "legacy" ? "Засчитан прежний ответ: " + V[a.v][0].toLowerCase() : "Ваш ответ: " + V[a.v][0].toLowerCase()) : "Ответа пока нет";
+  const hint = !a && lg ? `<div class="ainote">Прежний ответ на карточку целиком подсказывает: <b>${esc(V[lg][0].toLowerCase())}</b>. Проверьте именно эту пару.</div>` : "";
   $("#card").innerHTML = `
     <div class="cardhead">
-      <span class="pill ${PILL[it.auto]}">${esc(it.auto)}</span>
-      <h2>${esc(it.tour.brand || it.tour.type)}</h2>
-      <span class="q">${esc(it.city)} · ${pos + 1 > 0 ? (pos + 1) + " из " + v.length : "вне фильтра"}</span>
+      <h2>${esc(it.tour.brand || it.tour.type)} ↔ ${esc(cname(c))}</h2>
+      <span class="q">${esc(it.city)} · пара ${pos + 1 > 0 ? (pos + 1) + " из " + v.length : "вне фильтра"}</span>
       <div class="nav"><button type="button" class="btn-s" data-go="-1">← Назад</button><button type="button" class="btn-s" data-go="1">Дальше →</button></div>
     </div>
-    <p class="explain-short">Ответ даётся <b>по каждому фото объезда отдельно</b>: на разных фото могут быть разные щиты. Выберите фото объезда слева, найдите справа фото из базы с тем же щитом (жёлтая рамка — сравниваемый щит). Сравнивайте железо: опору, раму, табличку оператора, окружение. Двусторонний щит — один носитель со сторонами А и Б.</p>
-    ${legacy}
+    <p class="explain-short">Слева — фото ${p.ti + 1} из ${it.tour.imgs.length} этого места из объезда, справа — кандидат ${p.order + 1} из ${p.n} из базы. Щит обведён жёлтой рамкой. Сравнивайте железо: опору, раму, табличку оператора, окружение; реклама могла смениться. Двусторонний щит — один носитель со сторонами А и Б.</p>
+    ${hint}
+    <div class="toolbar"><span><span class="distance">${c.dist} м</span> между точками съёмки · <a class="maplink" href="${maps}" target="_blank" rel="noopener">обе точки на карте</a>${c.ai ? " · " + AIW[c.ai.verdict] : ""}</span></div>
     <div class="compare">
-      <div class="side"><h3>Объезд 10.09 — фото ${ti + 1} из ${T.length}</h3>${T.length > 1 ? tourStrip : ""}</div>
-      <div class="side"><h3>База августа — ${B.length} фото у ${it.cands.length} ${it.cands.length === 1 ? "кандидата" : "кандидатов"}</h3>${B.length > 1 ? baseStrip : ""}</div>
-    </div>
-    <div class="compare">
-      <div class="side">${leftPhoto}</div>
-      <div class="side">${rightPhoto}
-        ${bp ? `<div class="bcap"><b>Кандидат ${bp.j + 1} — ${esc(cname(bp.c))}</b> · ${bp.c.dist} м между точками съёмки${bp.c.ai ? " · " + AIW[bp.c.ai.verdict] : ""} · <a class="maplink" href="${maps}" target="_blank" rel="noopener">на карте</a></div>` : ""}
-      </div>
+      <div class="side"><h3>Объезд 10.09 — ${esc(it.tour.brand || it.tour.type)}</h3>${photoBlock("t:" + p.key, [p.t], [(it.tour.boxes || [])[p.ti]])}</div>
+      <div class="side"><h3>База августа — ${esc(cname(c))}</h3>${c.imgs.length ? photoBlock("b:" + p.key, c.imgs, c.boxes) : `<div class="photo"><div class="none">Фото в базе не сохранилось</div></div>`}</div>
     </div>
     <div class="answer">
-      <strong>Фото ${ti + 1} объезда: что это за щит?</strong>
+      <strong>Это один и тот же щит?</strong>
       <div class="row">
-        ${bp ? `<button type="button" class="ans same" data-pv="same" aria-pressed="${ans?.v === "same" && ans.match === bp.src}">${sameLbl} <kbd>1</kbd></button>` : ""}
-        <button type="button" class="ans newc" data-pv="new" aria-pressed="${ans?.v === "new"}">${it.kind === "pair" ? "Не совпадает ни с одним фото базы" : "Этого щита нет в базе"} <kbd>2</kbd></button>
-        <button type="button" class="ans unsure" data-pv="unsure" aria-pressed="${ans?.v === "unsure"}">Не уверен <kbd>3</kbd></button>
-        <button type="button" class="ans diff" data-pv="bad" aria-pressed="${ans?.v === "bad"}">Брак фото <kbd>4</kbd></button>
+        <button type="button" class="ans same" data-v="same" aria-pressed="${a?.src !== "auto" && a?.v === "same"}">Один и тот же щит <kbd>1</kbd></button>
+        <button type="button" class="ans diff" data-v="diff" aria-pressed="${a?.src !== "auto" && a?.v === "diff"}">Разные щиты <kbd>2</kbd></button>
+        <button type="button" class="ans unsure" data-v="unsure" aria-pressed="${a?.src !== "auto" && a?.v === "unsure"}">Не уверен <kbd>3</kbd></button>
+        <button type="button" class="ans diff" data-v="bad" aria-pressed="${a?.src !== "auto" && a?.v === "bad"}">Брак фото объезда <kbd>4</kbd></button>
       </div>
-      <label for="note" class="saved">Комментарий к карточке (по желанию)</label>
-      <textarea id="note" placeholder="Например: на фото 1 и 2 — стороны А и Б одного щита, фото 3 — другой щит">${esc(d.note || "")}</textarea>
-      <div class="saved" id="savedMsg">${T.filter(n => photos[n]).length} из ${T.length} фото с ответом</div>
+      <label for="note" class="saved">Комментарий (по желанию)</label>
+      <textarea id="note" placeholder="Например: та же опора и табличка, другая сторона щита">${esc(decisions[p.key]?.note || "")}</textarea>
+      <div class="saved" id="savedMsg">${status}</div>
     </div>
-    <div class="compare"><div>${metaList(it.tour, false)}</div><div>${bp ? metaList(bp.c, true) : ""}</div></div>
-    ${bp ? aiBlock(bp.c.ai) : ""}`;
+    <div class="compare"><div>${metaList(it.tour, false)}</div><div>${metaList(c, true)}</div></div>
+    ${aiBlock(c.ai)}`;
 }
 
 function renderAll(){ renderTop(); renderQueue(); renderCard(); }
 
-async function save(key, patch){
-  const prev = decisions[key] || {};
-  const next = {...prev, ...patch, updatedAt: new Date().toISOString()};
-  decisions[key] = next;
-  lsSet();
-  renderAll();
-  if (db){
-    try { await db.doc("decisions/" + key).set(next); }
-    catch(e){
-      const m = $("#savedMsg"); if (m) m.textContent = "Не удалось сохранить на сервер (" + (e.code || "ошибка") + "). Ответ остался в этом браузере.";
-    }
-  }
+async function save(key, rec){
+  decisions[key] = {...rec, updatedAt: new Date().toISOString()};
+  lsSet(); renderAll();
+  if (db){ try { await db.doc("decisions/" + key.replace(/[^A-Za-z0-9_\-.~:@+]/g, "_")).set(decisions[key]); } catch(e){} }
 }
 
 function go(step){
-  const v = visible();
-  if (!v.length) return;
+  const v = visible(); if (!v.length){ renderAll(); return; }
   let pos = v.findIndex(([, i]) => i === cur);
   pos = pos < 0 ? 0 : Math.max(0, Math.min(v.length - 1, pos + step));
-  cur = v[pos][1];
-  renderAll();
-  window.scrollTo({top: 0});
+  cur = v[pos][1]; renderAll(); window.scrollTo({top: 0});
 }
 
-function answerPhoto(pv){
-  const it = ITEMS[cur], T = it.tour.imgs, B = baseList(it);
-  const ti = Math.min(sel["t:" + it.key] || 0, T.length - 1);
-  let bi = sel["b:" + it.key];
-  const prev = decisions[it.key] || {};
-  const photos = {...(prev.photos || {})};
-  if (bi == null){ const m = B.findIndex(x => x.src === photos[T[ti]]?.match); bi = m >= 0 ? m : 0; }
-  const bp = B[Math.min(bi, B.length - 1)];
-  if (pv === "same" && !bp) return;
-  photos[T[ti]] = pv === "same" ? {v: "same", match: bp.src, candidate: bp.c.id} : {v: pv};
+function answer(val){
+  const p = PAIRS[cur]; if (!p) return;
   const note = ($("#note")?.value || "").trim();
-  const verdict = cardVerdict(it, photos);
-  const sameC = T.map(n => photos[n]).find(a => a?.v === "same");
-  save(it.key, {photos, verdict, note, kind: it.kind, tour: it.tour.id, auto: it.auto,
-                candidate: sameC ? sameC.candidate : null}).then(() => {
-    const next = T.findIndex(n => !photos[n]);          // следующее фото без ответа в этой карточке
-    if (next >= 0){ sel["t:" + it.key] = next; delete sel["b:" + it.key]; renderCard(); }
-    else if (filter === "todo") go(0);
-    else setTimeout(() => go(1), 250);
-  });
+  save(p.key, {v: val, note, tour: p.it.tour.id, photo: p.t.split("/").pop(), candidate: p.c.id, card: p.it.key})
+    .then(() => filter === "todo" ? go(0) : setTimeout(() => go(1), 200));
 }
 
 document.addEventListener("click", e => {
@@ -477,9 +432,7 @@ document.addEventListener("click", e => {
   if (t.dataset.f){ filter = t.dataset.f; const v = visible(); if (v.length && !v.some(([, i]) => i === cur)) cur = v[0][1]; renderAll(); }
   else if (t.dataset.i){ cur = +t.dataset.i; renderAll(); if (innerWidth < 860) $("#card").scrollIntoView(); }
   else if (t.dataset.go){ go(+t.dataset.go); }
-  else if (t.dataset.pv){ answerPhoto(t.dataset.pv); }
-  else if (t.dataset.tsel){ sel["t:" + ITEMS[cur].key] = +t.dataset.tsel; delete sel["b:" + ITEMS[cur].key]; renderCard(); }
-  else if (t.dataset.bsel){ sel["b:" + ITEMS[cur].key] = +t.dataset.bsel; renderCard(); }
+  else if (t.dataset.v){ answer(t.dataset.v); }
   else if (t.dataset.sel){ sel[t.dataset.sel] = +t.dataset.j; renderCard(); }
   else if (t.dataset.zoom){ $("#lbImg").src = t.dataset.zoom; $("#lb").hidden = false; }
   else if (t.id === "lbClose"){ $("#lb").hidden = true; }
@@ -487,61 +440,39 @@ document.addEventListener("click", e => {
 $("#lb").addEventListener("click", e => { if (e.target.id === "lb") $("#lb").hidden = true; });
 document.addEventListener("focusout", e => {
   if (e.target.id !== "note") return;
-  const it = ITEMS[cur], d = decisions[it.key], val = e.target.value.trim();
-  if ((d?.note || "") !== val) save(it.key, {note: val});
+  const p = PAIRS[cur], d = decisions[p?.key], val = e.target.value.trim();
+  if (d && (d.note || "") !== val) save(p.key, {...d, note: val});
 });
 document.addEventListener("keydown", e => {
   if (e.target.tagName === "TEXTAREA") return;
   if (!$("#lb").hidden && e.key === "Escape"){ $("#lb").hidden = true; return; }
-  const it = ITEMS[cur]; if (!it) return;
   if (e.key === "ArrowRight") go(1);
   else if (e.key === "ArrowLeft") go(-1);
-  else if (e.key === "1") answerPhoto("same");
-  else if (e.key === "2") answerPhoto("new");
-  else if (e.key === "3") answerPhoto("unsure");
-  else if (e.key === "4") answerPhoto("bad");
+  else if (e.key === "1") answer("same");
+  else if (e.key === "2") answer("diff");
+  else if (e.key === "3") answer("unsure");
+  else if (e.key === "4") answer("bad");
 });
 
-function exportText(){
-  return JSON.stringify({exported: new Date().toISOString(), total: ITEMS.length, decisions}, null, 1);
-}
+function exportText(){ return JSON.stringify({exported: new Date().toISOString(), decisions}, null, 1); }
 $("#btnDownload").addEventListener("click", () => {
   const blob = new Blob([exportText()], {type: "application/json"});
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
   a.download = "sverka_otvety_" + new Date().toISOString().slice(0, 10) + ".json";
   document.body.appendChild(a); a.click(); a.remove();
-  $("#exportMsg").textContent = "Файл скачан — пришлите его Claude.";
+  $("#exportMsg").textContent = "Файл скачан.";
 });
 $("#btnCopy").addEventListener("click", async () => {
-  try { await navigator.clipboard.writeText(exportText()); $("#exportMsg").textContent = "Скопировано — вставьте в чат с Claude."; }
+  try { await navigator.clipboard.writeText(exportText()); $("#exportMsg").textContent = "Скопировано."; }
   catch(e){ $("#exportMsg").textContent = "Не удалось скопировать — используйте «Скачать ответы»."; }
 });
 
 async function start(){
-  try {
-    ITEMS = await (await fetch("data.json")).json();
-  } catch(e){
-    $("#card").innerHTML = "<p>Не удалось загрузить данные страницы. Обновите страницу.</p>"; return;
-  }
-  decisions = lsGet();
+  try { ITEMS = await (await fetch("data.json", {cache: "no-store"})).json(); }
+  catch(e){ $("#card").innerHTML = "<p>Не удалось загрузить данные страницы. Обновите страницу.</p>"; return; }
+  decisions = lsGet(); buildPairs();
   const v = visible(); cur = v.length ? v[0][1] : 0;
   renderAll();
-  db = window.claude?.use ? await window.claude.use("db") : null;
-  if (!db) return;
-  db.collection("decisions").onSnapshot(snap => {
-    const server = {};
-    snap.docs.forEach(doc => { server[doc.id] = doc.data(); });
-    const local = decisions;
-    decisions = {...local, ...server};
-    lsSet();
-    renderTop(); renderQueue();
-    const it = ITEMS[cur];
-    if (it && document.activeElement?.id !== "note") renderCard();
-  }, err => {
-    const b = $("#banner"); b.hidden = false;
-    b.textContent = "Связь с хранилищем ответов потеряна (" + (err.code || "ошибка") + "). Новые ответы пока сохраняются в браузере — обновите страницу.";
-  });
 }
 start();
 </script>
