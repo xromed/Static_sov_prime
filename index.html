@@ -96,6 +96,15 @@ main.card{background:var(--panel);border:1px solid var(--line);border-radius:10p
 .photo{position:relative;background:var(--soft);border-radius:6px;overflow:hidden;height:max(320px, calc(100vh - 330px));max-width:100%}
 .photo img{width:100%;height:100%;object-fit:contain;display:block;cursor:zoom-in}
 .photo .none{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:20px;color:var(--muted);font-size:13px}
+.tbox{position:absolute;border:3px solid #FFD400;border-radius:3px;box-shadow:0 0 0 2px rgba(0,0,0,.55);pointer-events:none}
+.tbox span{position:absolute;left:-3px;top:-24px;background:#FFD400;color:#111;font:600 11px/1 var(--f-head);letter-spacing:.03em;padding:5px 6px;border-radius:3px 3px 0 0;white-space:nowrap}
+.cands{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.cand{display:grid;grid-template-columns:56px 1fr;gap:4px 8px;align-items:center;text-align:left;border:1.5px solid var(--line);background:var(--panel);border-radius:8px;padding:6px}
+.cand[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.cand img{grid-row:span 3;width:56px;height:56px;object-fit:cover;border-radius:4px;background:var(--soft)}
+.cand .cn{font:600 12px var(--f-head);text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.cand .cb{font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cand .cd{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
 .thumbs{display:flex;gap:6px;flex-wrap:wrap}
 .thumbs button{border:2px solid transparent;padding:0;border-radius:4px;overflow:hidden;width:56px;height:56px;background:var(--soft)}
 .thumbs button[aria-pressed="true"]{border-color:var(--accent)}
@@ -238,21 +247,37 @@ function renderQueue(){
     `<button type="button" class="qitem" data-i="${i}" aria-current="${i === cur}">
       <span class="dot ${dotClass(decisions[it.key])}"></span>
       <span class="qb">${esc(it.tour.brand || (it.tour.status === "место свободно" ? "свободный щит" : "—"))} <span class="qid">${esc(it.tour.type)}</span></span>
-      <span class="qid">${it.ai_conflict ? '<b class="aiflag">ИИ≠</b> ' : ""}${esc(it.tour.id)}</span>
+      <span class="qid">${it.ai_conflict ? '<b class="aiflag">ИИ≠</b>' : ""}</span>
     </button>`).join("")
     : `<p style="padding:14px;margin:0;color:var(--muted);font-size:13px">В этом фильтре пусто.</p>`;
 }
 
-function photoBlock(prefix, imgs){
+function photoBlock(prefix, imgs, boxes){
   const k = prefix;
   const s = Math.min(sel[k] || 0, Math.max(imgs.length - 1, 0));
+  const box = (boxes || [])[s];
   const main = imgs.length
-    ? `<img src="${esc(imgs[s])}" alt="Фото конструкции" data-zoom="${esc(imgs[s])}" loading="lazy">`
+    ? `<img src="${esc(imgs[s])}" alt="Фото конструкции" data-zoom="${esc(imgs[s])}" onload="placeBox(this)">
+       <div class="tbox" hidden><span>сравниваемый щит</span></div>`
     : `<div class="none">Фото в базе не сохранилось — сверяйте по бренду, тексту и адресу</div>`;
   const th = imgs.length > 1 ? `<div class="thumbs">${imgs.map((src, j) =>
     `<button type="button" data-sel="${esc(k)}" data-j="${j}" aria-pressed="${j === s}" aria-label="Кадр ${j + 1}"><img src="${esc(src)}" alt="" loading="lazy"></button>`).join("")}</div>` : "";
-  return `<div class="photo">${main}</div>${th}`;
+  return `<div class="photo" data-box='${box ? JSON.stringify(box) : ""}'>${main}</div>${th}`;
 }
+
+// рамка поверх картинки с object-fit:contain — пересчёт от реального размера показа
+function placeBox(img){
+  const ph = img.parentElement, el = ph.querySelector(".tbox");
+  let box = null; try { box = JSON.parse(ph.dataset.box || "null"); } catch(e){}
+  if (!el || !box || !img.naturalWidth){ if (el) el.hidden = true; return; }
+  const cw = ph.clientWidth, ch = ph.clientHeight, nw = img.naturalWidth, nh = img.naturalHeight;
+  const sc = Math.min(cw / nw, ch / nh), w = nw * sc, h = nh * sc, ox = (cw - w) / 2, oy = (ch - h) / 2;
+  const [y0, x0, y1, x1] = box;
+  Object.assign(el.style, {left: ox + x0 / 1000 * w + "px", top: oy + y0 / 1000 * h + "px",
+    width: (x1 - x0) / 1000 * w + "px", height: (y1 - y0) / 1000 * h + "px"});
+  el.hidden = false;
+}
+window.addEventListener("resize", () => document.querySelectorAll(".photo img").forEach(placeBox));
 
 function metaList(o, isBase){
   const rows = [
@@ -299,15 +324,22 @@ function renderCard(){
   const ci = Math.min(candIdx[it.key] || 0, Math.max(it.cands.length - 1, 0));
   const cand = it.cands[ci];
   const v = visible(), pos = v.findIndex(([, i]) => i === cur);
-  const question = it.kind === "pair" ? "Это тот же самый щит?" : "Есть ли этот щит в базе?";
+  const question = it.kind === "pair" ? "Щит в жёлтой рамке слева и справа — один и тот же?" : "Есть ли щит из объезда среди кандидатов из базы? Пролистайте кандидатов вверху.";
 
-  const tabs = it.cands.length > 1 ? `<div class="tabs" role="group" aria-label="Кандидаты базы">${it.cands.map((c, j) =>
-      `<button type="button" data-cand="${j}" aria-pressed="${j === ci}">${c.ai ? (c.ai.verdict === "та же" ? "✓ " : c.ai.verdict === "разные" ? "✗ " : "? ") : ""}${esc(c.brand || c.type || c.id)} · ${c.dist} м</button>`).join("")}</div>` : "";
+  const AIW = {"та же": "ИИ: тот же", "разные": "ИИ: другой", "не уверен": "ИИ: не уверен"};
+  const cname = (c, j) => `кандидат ${j + 1}${c.brand ? " — " + c.brand : c.status === "место свободно" ? " — свободный щит" : ""}`;
+  const tabs = it.kind === "new" ? `<div class="cands" role="group" aria-label="Кандидаты из базы">${it.cands.map((c, j) =>
+      `<button type="button" class="cand" data-cand="${j}" aria-pressed="${j === ci}">
+         ${c.imgs[0] ? `<img src="${esc(c.imgs[0])}" alt="" loading="lazy">` : `<img alt="">`}
+         <span class="cn">Кандидат ${j + 1}</span>
+         <span class="cb">${esc(c.brand || (c.status === "место свободно" ? "свободный щит" : c.type))}</span>
+         <span class="cd">${c.dist} м${c.ai ? " · " + AIW[c.ai.verdict] : ""}</span>
+       </button>`).join("")}</div>` : "";
   const maps = cand ? `https://www.google.com/maps/dir/${it.tour.lat},${it.tour.lon}/${cand.lat},${cand.lon}` : "";
-  const toolbar = cand ? `<div class="toolbar">${tabs}<span><span class="distance">${cand.dist} м</span> между точками съёмки · <a class="maplink" href="${maps}" target="_blank" rel="noopener">обе точки на карте</a></span></div>` : "";
+  const toolbar = cand ? `${tabs}<div class="toolbar"><span><span class="distance">${cand.dist} м</span> между точками съёмки · <a class="maplink" href="${maps}" target="_blank" rel="noopener">обе точки на карте</a></span></div>` : "";
   const photos = `<div class="compare">
-      <div class="side"><h3>Объезд · ${esc(it.tour.id)}</h3>${photoBlock("t:" + it.key, it.tour.imgs)}</div>
-      <div class="side"><h3>База августа${cand ? " · " + esc(cand.id) : ""}</h3>${cand ? photoBlock("b:" + it.key + ":" + ci, cand.imgs)
+      <div class="side"><h3>Объезд 10.09 — ${esc(it.tour.brand || it.tour.type)}</h3>${photoBlock("t:" + it.key, it.tour.imgs, it.tour.boxes)}</div>
+      <div class="side"><h3>База августа${cand ? " — " + esc(it.kind === "new" ? cname(cand, ci) + " из " + it.cands.length : (cand.brand || cand.type)) : ""}</h3>${cand ? photoBlock("b:" + it.key + ":" + ci, cand.imgs, cand.boxes)
         : `<div class="photo"><div class="none">В базе нет конструкций ближе 300 м</div></div>`}</div>
     </div>`;
   const metas = `<div class="compare"><div>${metaList(it.tour, false)}</div><div>${cand ? metaList(cand, true) : ""}</div></div>`;
@@ -320,11 +352,12 @@ function renderCard(){
   } else {
     const same = d?.verdict === "same" && cand && d.candidate === cand.id;
     buttons = `
-      ${cand ? `<button type="button" class="ans same" data-v="same" aria-pressed="${same}">Это он — ${esc(cand.id)} <kbd>1</kbd></button>` : ""}
-      <button type="button" class="ans newc" data-v="new" aria-pressed="${d?.verdict === "new"}">Новый, в базе нет <kbd>2</kbd></button>
+      ${cand ? `<button type="button" class="ans same" data-v="same" aria-pressed="${same}">Это он — ${esc(cname(cand, ci))}, ${cand.dist} м <kbd>1</kbd></button>` : ""}
+      <button type="button" class="ans newc" data-v="new" aria-pressed="${d?.verdict === "new"}">Ни один из кандидатов — новый щит <kbd>2</kbd></button>
       <button type="button" class="ans unsure" data-v="unsure" aria-pressed="${d?.verdict === "unsure"}">Не уверен <kbd>3</kbd></button>`;
   }
-  const savedTxt = d ? "Ответ сохранён" + (d.verdict === "same" && d.candidate && it.kind === "new" ? " · совпадает с " + d.candidate : "") : "Ответа пока нет";
+  const chosen = it.cands.findIndex(c => c.id === d?.candidate);
+  const savedTxt = d ? "Ответ сохранён" + (d.verdict === "same" && it.kind === "new" && chosen >= 0 ? " · это " + cname(it.cands[chosen], chosen) : "") : "Ответа пока нет";
 
   $("#card").innerHTML = `
     <div class="cardhead">
