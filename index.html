@@ -93,11 +93,21 @@ main.card{background:var(--panel);border:1px solid var(--line);border-radius:10p
 .explain-short{font-size:13px;color:var(--muted);margin:0}
 .side{display:grid;gap:10px;align-content:start;min-width:0}
 .side h3{font-size:14px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600}
-.photo{position:relative;background:var(--soft);border-radius:6px;overflow:hidden;height:max(320px, calc(100vh - 330px));max-width:100%}
+.photo{position:relative;background:var(--soft);border-radius:6px;overflow:hidden;height:max(300px, calc(100vh - 420px));max-width:100%}
 .photo img{width:100%;height:100%;object-fit:contain;display:block;cursor:zoom-in}
 .photo .none{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:20px;color:var(--muted);font-size:13px}
 .tbox{position:absolute;border:3px solid #FFD400;border-radius:3px;box-shadow:0 0 0 2px rgba(0,0,0,.55);pointer-events:none}
 .tbox span{position:absolute;left:-3px;top:-24px;background:#FFD400;color:#111;font:600 11px/1 var(--f-head);letter-spacing:.03em;padding:5px 6px;border-radius:3px 3px 0 0;white-space:nowrap}
+.strip{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px}
+.sthumb{flex:0 0 auto;width:118px;display:grid;gap:2px;text-align:left;border:1.5px solid var(--line);background:var(--panel);border-radius:6px;padding:4px}
+.sthumb[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.sthumb.match{box-shadow:0 0 0 2px var(--ok)}
+.sthumb img{width:100%;height:64px;object-fit:cover;border-radius:3px;background:var(--soft)}
+.sthumb .sl{font:600 11px var(--f-head);text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.sthumb .st{font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sthumb .st.same{color:var(--ok)} .sthumb .st.newc{color:var(--new)} .sthumb .st.diff{color:var(--bad)} .sthumb .st.unsure{color:var(--warn)}
+.bcap{font-size:13px;margin-top:6px}
+.dot.part{background:linear-gradient(90deg,var(--accent) 50%,transparent 50%);border-color:var(--accent)}
 .cands{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
 .cand{display:grid;grid-template-columns:56px 1fr;gap:4px 8px;align-items:center;text-align:left;border:1.5px solid var(--line);background:var(--panel);border-radius:8px;padding:6px}
 .cand[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
@@ -212,30 +222,46 @@ const fmtC = (lat, lon) => lat == null ? "" : lat.toFixed(6) + ", " + lon.toFixe
 function lsGet(){ try { return JSON.parse(localStorage.getItem("tour-review") || "{}"); } catch(e){ return {}; } }
 function lsSet(){ try { localStorage.setItem("tour-review", JSON.stringify(decisions)); } catch(e){} }
 
+function isDone(it){
+  const d = decisions[it.key];
+  if (!d) return false;
+  if (d.photos) return it.tour.imgs.every(n => d.photos[n]);
+  return !!d.verdict;                                   // прежний ответ на карточку целиком
+}
+// сводный вердикт карточки из ответов по фото
+function cardVerdict(it, photos){
+  const vs = it.tour.imgs.map(n => photos[n]?.v).filter(Boolean);
+  if (!vs.length) return null;
+  if (vs.includes("same")) return "same";
+  if (vs.includes("unsure")) return "unsure";
+  return it.kind === "pair" ? "diff" : "new";
+}
+
 function visible(){
   return ITEMS.map((it, i) => [it, i]).filter(([it]) => {
     if (filter === "all") return true;
-    if (filter === "todo") return !decisions[it.key];
+    if (filter === "todo") return !isDone(it);
     if (filter === "conflict") return it.ai_conflict;
     if (filter === "смена") return it.auto.startsWith("смена");
     return it.auto === filter;
   });
 }
 
-function dotClass(d){
-  if (!d) return "";
+function dotClass(it){
+  const d = decisions[it.key];
+  if (!d || !isDone(it)) return d ? "part" : "";
   return {same:"same", diff:"diff", unsure:"unsure", new:"newc"}[d.verdict] || "";
 }
 
 function renderTop(){
-  const n = ITEMS.length, done = ITEMS.filter(i => decisions[i.key]).length;
+  const n = ITEMS.length, done = ITEMS.filter(isDone).length;
   const c = {same:0, diff:0, new:0, unsure:0};
-  ITEMS.forEach(i => { const d = decisions[i.key]; if (d && c[d.verdict] != null) c[d.verdict]++; });
+  ITEMS.forEach(i => { const d = decisions[i.key]; if (d && isDone(i) && c[d.verdict] != null) c[d.verdict]++; });
   $("#progText").textContent = `Проверено ${done} из ${n}`;
   const seg = (k, v) => `<i style="width:${n ? c[k] / n * 100 : 0}%;background:var(${v})"></i>`;
   $("#bar").innerHTML = seg("same","--ok") + seg("diff","--bad") + seg("new","--new") + seg("unsure","--warn");
   $("#filters").innerHTML = FILTERS.map(([k, l]) => {
-    const cnt = ITEMS.filter(it => k === "all" ? true : k === "todo" ? !decisions[it.key] : k === "conflict" ? it.ai_conflict
+    const cnt = ITEMS.filter(it => k === "all" ? true : k === "todo" ? !isDone(it) : k === "conflict" ? it.ai_conflict
       : k === "смена" ? it.auto.startsWith("смена") : it.auto === k).length;
     return `<button type="button" class="chip" data-f="${esc(k)}" aria-pressed="${filter === k}">${esc(l)} · ${cnt}</button>`;
   }).join("");
@@ -245,7 +271,7 @@ function renderQueue(){
   const v = visible();
   $("#queue").innerHTML = v.length ? v.map(([it, i]) =>
     `<button type="button" class="qitem" data-i="${i}" aria-current="${i === cur}">
-      <span class="dot ${dotClass(decisions[it.key])}"></span>
+      <span class="dot ${dotClass(it)}"></span>
       <span class="qb">${esc(it.tour.brand || (it.tour.status === "место свободно" ? "свободный щит" : "—"))} <span class="qid">${esc(it.tour.type)}</span></span>
       <span class="qid">${it.ai_conflict ? '<b class="aiflag">ИИ≠</b>' : ""}</span>
     </button>`).join("")
@@ -317,47 +343,50 @@ function aiBlock(ai){
     </details></div>`;
 }
 
+const PV = {same: ["тот же щит", "same"], new: ["нет в базе", "newc"], bad: ["брак фото", "diff"], unsure: ["не уверен", "unsure"]};
+
+function baseList(it){                                   // все фото всех кандидатов одной лентой
+  return it.cands.flatMap((c, j) => c.imgs.map((src, k) => ({c, j, k, src, box: (c.boxes || [])[k]})));
+}
+
 function renderCard(){
   const it = ITEMS[cur];
   if (!it){ $("#card").innerHTML = "<p>Нет карточек.</p>"; return; }
-  const d = decisions[it.key];
-  const ci = Math.min(candIdx[it.key] || 0, Math.max(it.cands.length - 1, 0));
-  const cand = it.cands[ci];
+  const d = decisions[it.key] || {};
+  const photos = d.photos || {};
+  const T = it.tour.imgs, B = baseList(it);
+  const ti = Math.min(sel["t:" + it.key] || 0, Math.max(T.length - 1, 0));
+  const tname = T[ti];
+  const ans = photos[tname];
+  let bi = sel["b:" + it.key];
+  if (bi == null){ const m = B.findIndex(x => x.src === ans?.match); bi = m >= 0 ? m : 0; }
+  bi = Math.min(bi, Math.max(B.length - 1, 0));
+  const bp = B[bi];
   const v = visible(), pos = v.findIndex(([, i]) => i === cur);
-  const question = it.kind === "pair" ? "Щит в жёлтой рамке слева и справа — один и тот же?" : "Есть ли щит из объезда среди кандидатов из базы? Пролистайте кандидатов вверху.";
-
   const AIW = {"та же": "ИИ: тот же", "разные": "ИИ: другой", "не уверен": "ИИ: не уверен"};
-  const cname = (c, j) => `кандидат ${j + 1}${c.brand ? " — " + c.brand : c.status === "место свободно" ? " — свободный щит" : ""}`;
-  const tabs = it.kind === "new" ? `<div class="cands" role="group" aria-label="Кандидаты из базы">${it.cands.map((c, j) =>
-      `<button type="button" class="cand" data-cand="${j}" aria-pressed="${j === ci}">
-         ${c.imgs[0] ? `<img src="${esc(c.imgs[0])}" alt="" loading="lazy">` : `<img alt="">`}
-         <span class="cn">Кандидат ${j + 1}</span>
-         <span class="cb">${esc(c.brand || (c.status === "место свободно" ? "свободный щит" : c.type))}</span>
-         <span class="cd">${c.dist} м${c.ai ? " · " + AIW[c.ai.verdict] : ""}</span>
-       </button>`).join("")}</div>` : "";
-  const maps = cand ? `https://www.google.com/maps/dir/${it.tour.lat},${it.tour.lon}/${cand.lat},${cand.lon}` : "";
-  const toolbar = cand ? `${tabs}<div class="toolbar"><span><span class="distance">${cand.dist} м</span> между точками съёмки · <a class="maplink" href="${maps}" target="_blank" rel="noopener">обе точки на карте</a></span></div>` : "";
-  const photos = `<div class="compare">
-      <div class="side"><h3>Объезд 10.09 — ${esc(it.tour.brand || it.tour.type)}</h3>${photoBlock("t:" + it.key, it.tour.imgs, it.tour.boxes)}</div>
-      <div class="side"><h3>База августа${cand ? " — " + esc(it.kind === "new" ? cname(cand, ci) + " из " + it.cands.length : (cand.brand || cand.type)) : ""}</h3>${cand ? photoBlock("b:" + it.key + ":" + ci, cand.imgs, cand.boxes)
-        : `<div class="photo"><div class="none">В базе нет конструкций ближе 300 м</div></div>`}</div>
-    </div>`;
-  const metas = `<div class="compare"><div>${metaList(it.tour, false)}</div><div>${cand ? metaList(cand, true) : ""}</div></div>`;
-  let buttons;
-  if (it.kind === "pair"){
-    buttons = `
-      <button type="button" class="ans same" data-v="same" aria-pressed="${d?.verdict === "same"}">Тот же щит <kbd>1</kbd></button>
-      <button type="button" class="ans diff" data-v="diff" aria-pressed="${d?.verdict === "diff"}">Разные щиты <kbd>2</kbd></button>
-      <button type="button" class="ans unsure" data-v="unsure" aria-pressed="${d?.verdict === "unsure"}">Не уверен <kbd>3</kbd></button>`;
-  } else {
-    const same = d?.verdict === "same" && cand && d.candidate === cand.id;
-    buttons = `
-      ${cand ? `<button type="button" class="ans same" data-v="same" aria-pressed="${same}">Это он — ${esc(cname(cand, ci))}, ${cand.dist} м <kbd>1</kbd></button>` : ""}
-      <button type="button" class="ans newc" data-v="new" aria-pressed="${d?.verdict === "new"}">Ни один из кандидатов — новый щит <kbd>2</kbd></button>
-      <button type="button" class="ans unsure" data-v="unsure" aria-pressed="${d?.verdict === "unsure"}">Не уверен <kbd>3</kbd></button>`;
-  }
-  const chosen = it.cands.findIndex(c => c.id === d?.candidate);
-  const savedTxt = d ? "Ответ сохранён" + (d.verdict === "same" && it.kind === "new" && chosen >= 0 ? " · это " + cname(it.cands[chosen], chosen) : "") : "Ответа пока нет";
+  const cname = c => c.brand || (c.status === "место свободно" ? "свободный щит" : c.type);
+
+  const tourStrip = `<div class="strip" role="group" aria-label="Фото объезда">${T.map((src, j) => {
+      const a = photos[src];
+      return `<button type="button" class="sthumb" data-tsel="${j}" aria-pressed="${j === ti}">
+        <img src="${esc(src)}" alt="" loading="lazy"><span class="sl">Фото ${j + 1}</span>
+        <span class="st ${a ? PV[a.v][1] : ""}">${a ? PV[a.v][0] + (a.v === "same" ? " ✓" : "") : "без ответа"}</span></button>`;
+    }).join("")}</div>`;
+
+  const baseStrip = B.length ? `<div class="strip" role="group" aria-label="Фото из базы">${B.map((x, j) => {
+      const isMatch = ans?.v === "same" && ans.match === x.src;
+      return `<button type="button" class="sthumb${isMatch ? " match" : ""}" data-bsel="${j}" aria-pressed="${j === bi}">
+        <img src="${esc(x.src)}" alt="" loading="lazy"><span class="sl">Канд. ${x.j + 1} · фото ${x.k + 1}</span>
+        <span class="st">${esc(cname(x.c))} · ${x.c.dist} м</span></button>`;
+    }).join("")}</div>` : "";
+
+  const leftPhoto = photoBlock("tt:" + it.key, [tname], [(it.tour.boxes || [])[ti]]);
+  const rightPhoto = bp ? photoBlock("bb:" + it.key, [bp.src], [bp.box])
+    : `<div class="photo"><div class="none">${it.cands.length ? "У кандидатов нет фото — сверяйте по данным ниже" : "В базе нет конструкций ближе 300 м"}</div></div>`;
+  const maps = bp ? `https://www.google.com/maps/dir/${it.tour.lat},${it.tour.lon}/${bp.c.lat},${bp.c.lon}` : "";
+
+  const legacy = d.verdict && !d.photos ? `<div class="ainote">Прежний ответ на карточку целиком: <b>${esc({same:"тот же щит", diff:"разные", new:"новый", unsure:"не уверен"}[d.verdict] || d.verdict)}</b>. Можно уточнить по каждому фото — или оставить как есть.</div>` : "";
+  const sameLbl = bp ? `Тот же щит, что справа (кандидат ${bp.j + 1} — ${esc(cname(bp.c))})` : "";
 
   $("#card").innerHTML = `
     <div class="cardhead">
@@ -366,18 +395,32 @@ function renderCard(){
       <span class="q">${esc(it.city)} · ${pos + 1 > 0 ? (pos + 1) + " из " + v.length : "вне фильтра"}</span>
       <div class="nav"><button type="button" class="btn-s" data-go="-1">← Назад</button><button type="button" class="btn-s" data-go="1">Дальше →</button></div>
     </div>
-    <p class="explain-short">${esc(AUTO_TEXT[it.auto])} Сравнивайте железо: опору, раму, блок под полем, табличку оператора, окружение. Двусторонний щит — один носитель со сторонами А и Б.</p>
-    ${toolbar}
-    ${photos}
-    ${metas}
-    ${cand ? aiBlock(cand.ai) : ""}
+    <p class="explain-short">Ответ даётся <b>по каждому фото объезда отдельно</b>: на разных фото могут быть разные щиты. Выберите фото объезда слева, найдите справа фото из базы с тем же щитом (жёлтая рамка — сравниваемый щит). Сравнивайте железо: опору, раму, табличку оператора, окружение. Двусторонний щит — один носитель со сторонами А и Б.</p>
+    ${legacy}
+    <div class="compare">
+      <div class="side"><h3>Объезд 10.09 — фото ${ti + 1} из ${T.length}</h3>${T.length > 1 ? tourStrip : ""}</div>
+      <div class="side"><h3>База августа — ${B.length} фото у ${it.cands.length} ${it.cands.length === 1 ? "кандидата" : "кандидатов"}</h3>${B.length > 1 ? baseStrip : ""}</div>
+    </div>
+    <div class="compare">
+      <div class="side">${leftPhoto}</div>
+      <div class="side">${rightPhoto}
+        ${bp ? `<div class="bcap"><b>Кандидат ${bp.j + 1} — ${esc(cname(bp.c))}</b> · ${bp.c.dist} м между точками съёмки${bp.c.ai ? " · " + AIW[bp.c.ai.verdict] : ""} · <a class="maplink" href="${maps}" target="_blank" rel="noopener">на карте</a></div>` : ""}
+      </div>
+    </div>
     <div class="answer">
-      <strong>${question}</strong>
-      <div class="row">${buttons}</div>
-      <label for="note" class="saved">Комментарий (по желанию)</label>
-      <textarea id="note" placeholder="Например: тот же щит, но сменили рекламу / в базе ошибка бренда">${esc(d?.note || "")}</textarea>
-      <div class="saved" id="savedMsg">${savedTxt}</div>
-    </div>`;
+      <strong>Фото ${ti + 1} объезда: что это за щит?</strong>
+      <div class="row">
+        ${bp ? `<button type="button" class="ans same" data-pv="same" aria-pressed="${ans?.v === "same" && ans.match === bp.src}">${sameLbl} <kbd>1</kbd></button>` : ""}
+        <button type="button" class="ans newc" data-pv="new" aria-pressed="${ans?.v === "new"}">${it.kind === "pair" ? "Не совпадает ни с одним фото базы" : "Этого щита нет в базе"} <kbd>2</kbd></button>
+        <button type="button" class="ans unsure" data-pv="unsure" aria-pressed="${ans?.v === "unsure"}">Не уверен <kbd>3</kbd></button>
+        <button type="button" class="ans diff" data-pv="bad" aria-pressed="${ans?.v === "bad"}">Брак фото <kbd>4</kbd></button>
+      </div>
+      <label for="note" class="saved">Комментарий к карточке (по желанию)</label>
+      <textarea id="note" placeholder="Например: на фото 1 и 2 — стороны А и Б одного щита, фото 3 — другой щит">${esc(d.note || "")}</textarea>
+      <div class="saved" id="savedMsg">${T.filter(n => photos[n]).length} из ${T.length} фото с ответом</div>
+    </div>
+    <div class="compare"><div>${metaList(it.tour, false)}</div><div>${bp ? metaList(bp.c, true) : ""}</div></div>
+    ${bp ? aiBlock(bp.c.ai) : ""}`;
 }
 
 function renderAll(){ renderTop(); renderQueue(); renderCard(); }
@@ -406,17 +449,26 @@ function go(step){
   window.scrollTo({top: 0});
 }
 
-function answer(vd){
-  const it = ITEMS[cur];
-  const ci = candIdx[it.key] || 0;
-  const cand = it.cands[ci];
-  if (vd === "same" && it.kind === "new" && !cand) return;
+function answerPhoto(pv){
+  const it = ITEMS[cur], T = it.tour.imgs, B = baseList(it);
+  const ti = Math.min(sel["t:" + it.key] || 0, T.length - 1);
+  let bi = sel["b:" + it.key];
+  const prev = decisions[it.key] || {};
+  const photos = {...(prev.photos || {})};
+  if (bi == null){ const m = B.findIndex(x => x.src === photos[T[ti]]?.match); bi = m >= 0 ? m : 0; }
+  const bp = B[Math.min(bi, B.length - 1)];
+  if (pv === "same" && !bp) return;
+  photos[T[ti]] = pv === "same" ? {v: "same", match: bp.src, candidate: bp.c.id} : {v: pv};
   const note = ($("#note")?.value || "").trim();
-  const patch = {verdict: vd, note, kind: it.kind, tour: it.tour.id, auto: it.auto};
-  patch.candidate = (vd === "same" && cand) ? cand.id : (it.kind === "pair" ? cand?.id ?? null : null);
-  const wasTodo = filter === "todo";
-  save(it.key, patch).then(() => { if (wasTodo) go(0); });
-  if (!wasTodo) setTimeout(() => go(1), 250);
+  const verdict = cardVerdict(it, photos);
+  const sameC = T.map(n => photos[n]).find(a => a?.v === "same");
+  save(it.key, {photos, verdict, note, kind: it.kind, tour: it.tour.id, auto: it.auto,
+                candidate: sameC ? sameC.candidate : null}).then(() => {
+    const next = T.findIndex(n => !photos[n]);          // следующее фото без ответа в этой карточке
+    if (next >= 0){ sel["t:" + it.key] = next; delete sel["b:" + it.key]; renderCard(); }
+    else if (filter === "todo") go(0);
+    else setTimeout(() => go(1), 250);
+  });
 }
 
 document.addEventListener("click", e => {
@@ -425,8 +477,9 @@ document.addEventListener("click", e => {
   if (t.dataset.f){ filter = t.dataset.f; const v = visible(); if (v.length && !v.some(([, i]) => i === cur)) cur = v[0][1]; renderAll(); }
   else if (t.dataset.i){ cur = +t.dataset.i; renderAll(); if (innerWidth < 860) $("#card").scrollIntoView(); }
   else if (t.dataset.go){ go(+t.dataset.go); }
-  else if (t.dataset.v){ answer(t.dataset.v); }
-  else if (t.dataset.cand){ candIdx[ITEMS[cur].key] = +t.dataset.cand; renderCard(); }
+  else if (t.dataset.pv){ answerPhoto(t.dataset.pv); }
+  else if (t.dataset.tsel){ sel["t:" + ITEMS[cur].key] = +t.dataset.tsel; delete sel["b:" + ITEMS[cur].key]; renderCard(); }
+  else if (t.dataset.bsel){ sel["b:" + ITEMS[cur].key] = +t.dataset.bsel; renderCard(); }
   else if (t.dataset.sel){ sel[t.dataset.sel] = +t.dataset.j; renderCard(); }
   else if (t.dataset.zoom){ $("#lbImg").src = t.dataset.zoom; $("#lb").hidden = false; }
   else if (t.id === "lbClose"){ $("#lb").hidden = true; }
@@ -435,7 +488,7 @@ $("#lb").addEventListener("click", e => { if (e.target.id === "lb") $("#lb").hid
 document.addEventListener("focusout", e => {
   if (e.target.id !== "note") return;
   const it = ITEMS[cur], d = decisions[it.key], val = e.target.value.trim();
-  if (d && (d.note || "") !== val) save(it.key, {note: val});
+  if ((d?.note || "") !== val) save(it.key, {note: val});
 });
 document.addEventListener("keydown", e => {
   if (e.target.tagName === "TEXTAREA") return;
@@ -443,9 +496,10 @@ document.addEventListener("keydown", e => {
   const it = ITEMS[cur]; if (!it) return;
   if (e.key === "ArrowRight") go(1);
   else if (e.key === "ArrowLeft") go(-1);
-  else if (e.key === "1") answer("same");
-  else if (e.key === "2") answer(it.kind === "pair" ? "diff" : "new");
-  else if (e.key === "3") answer("unsure");
+  else if (e.key === "1") answerPhoto("same");
+  else if (e.key === "2") answerPhoto("new");
+  else if (e.key === "3") answerPhoto("unsure");
+  else if (e.key === "4") answerPhoto("bad");
 });
 
 function exportText(){
